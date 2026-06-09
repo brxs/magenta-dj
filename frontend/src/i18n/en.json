@@ -1,0 +1,33 @@
+{
+  "app": {
+    "title": "magenta-dj"
+  },
+  "deck": {
+    "title": "Deck {{id}}",
+    "model": "{{model}}",
+    "prompt": {
+      "label": "Style prompt",
+      "placeholder": "e.g. warm disco funk",
+      "apply": "Set prompt",
+      "active": "Playing: {{prompt}}"
+    },
+    "play": "Play",
+    "stop": "Stop",
+    "volume": "Volume",
+    "status": {
+      "connecting": "Connecting…",
+      "connected": "Connected",
+      "disconnected": "Disconnected — retrying"
+    },
+    "health": {
+      "buffer": "Buffer",
+      "bufferSeconds": "{{seconds}}s",
+      "underruns": "Underruns",
+      "generationSpeed": "Gen speed",
+      "generationSpeedValue": "{{rtf}}×"
+    },
+    "error": {
+      "label": "Deck error"
+    }
+  }
+}

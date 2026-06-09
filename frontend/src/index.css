@@ -1,0 +1,36 @@
+@import './ui/tokens.css';
+@import './ui/ui.css';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: 400 var(--text-m) var(--font-ui);
+}
+
+.app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-4);
+}
+
+.app__title {
+  font: 700 var(--text-l) var(--font-ui);
+  color: var(--color-accent-strong);
+  margin: 0;
+}
+
+.app__decks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  justify-content: center;
+  width: 100%;
+}

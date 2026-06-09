@@ -1,0 +1,38 @@
+/* Design tokens — the single source for colour, spacing, type, and shape.
+   Components reference these variables only; no literal values in component
+   styles. */
+
+:root {
+  /* Colour */
+  --color-bg: #0e0b10;
+  --color-surface: #1a1520;
+  --color-surface-raised: #251d2e;
+  --color-border: #3a2f48;
+  --color-text: #f2eef6;
+  --color-text-muted: #9c8fae;
+  --color-accent: #e91e8c;
+  --color-accent-strong: #ff4dac;
+  --color-ok: #3ddc84;
+  --color-warn: #ffb74d;
+  --color-danger: #ff5252;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2.5rem;
+
+  /* Typography */
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+  --text-s: 0.8rem;
+  --text-m: 1rem;
+  --text-l: 1.4rem;
+
+  /* Shape & elevation */
+  --radius-s: 6px;
+  --radius-m: 12px;
+  --shadow-raised: 0 4px 16px rgb(0 0 0 / 0.4);
+}
