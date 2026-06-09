@@ -1,0 +1,123 @@
+/* Minimal component kit, styled exclusively from tokens.css variables. */
+
+.ui-button {
+  font: 600 var(--text-m) var(--font-ui);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.ui-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ui-button--primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.ui-button--primary:not(:disabled):hover {
+  background: var(--color-accent-strong);
+}
+
+.ui-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.ui-field__label {
+  font: 500 var(--text-s) var(--font-ui);
+  color: var(--color-text-muted);
+}
+
+.ui-field__input {
+  font: 400 var(--text-m) var(--font-ui);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.ui-field__input:focus {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.ui-slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ui-slider__label {
+  font: 500 var(--text-s) var(--font-ui);
+  color: var(--color-text-muted);
+}
+
+.ui-slider__input {
+  accent-color: var(--color-accent);
+  width: 100%;
+}
+
+.ui-meter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ui-meter__label {
+  font: 500 var(--text-s) var(--font-ui);
+  color: var(--color-text-muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.ui-meter__track {
+  height: var(--space-2);
+  border-radius: var(--radius-s);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.ui-meter__fill {
+  height: 100%;
+  background: var(--color-ok);
+  transition: width 0.3s linear;
+}
+
+.ui-meter--warn .ui-meter__fill {
+  background: var(--color-warn);
+}
+
+.ui-meter--danger .ui-meter__fill {
+  background: var(--color-danger);
+}
+
+.ui-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.ui-stat__label {
+  font: 500 var(--text-s) var(--font-ui);
+  color: var(--color-text-muted);
+}
+
+.ui-stat__value {
+  font: 600 var(--text-m) var(--font-mono);
+  color: var(--color-text);
+}
+
+.ui-stat--danger .ui-stat__value {
+  color: var(--color-danger);
+}

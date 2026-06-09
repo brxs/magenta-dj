@@ -1,8 +1,10 @@
-// Throwaway M1 test player (replaced by the React app in M2).
-// Ring-buffers interleaved stereo float32 PCM posted from the main thread and
-// plays it, counting underrun events. Playback starts (and restarts after an
-// underrun) only once PREBUFFER_SECONDS of audio is queued, so one slow chunk
-// causes a single counted gap instead of a crackle storm.
+// PCM deck player. Ring-buffers interleaved stereo float32 chunks posted from
+// the main thread and plays them, counting underrun events. Playback starts
+// (and restarts after an underrun) only once PREBUFFER_SECONDS of audio is
+// queued, so one slow chunk causes a single counted gap instead of a crackle
+// storm. Posts {underruns, bufferedSeconds, playing} stats every second.
+//
+// Messages in: {type: 'pcm', samples: Float32Array} | {type: 'reset'}
 
 const CAPACITY_SECONDS = 30;
 const PREBUFFER_SECONDS = 1.5;
@@ -20,7 +22,20 @@ class PCMPlayer extends AudioWorkletProcessor {
     this.started = false;
     this.underruns = 0;
     this.framesSinceStats = 0;
-    this.port.onmessage = (event) => this.enqueue(event.data);
+    this.port.onmessage = (event) => {
+      const message = event.data;
+      if (message.type === 'pcm') {
+        this.enqueue(message.samples);
+      } else if (message.type === 'reset') {
+        // Flushes queued audio only; underruns intentionally survive — the
+        // counter reports the whole page session, not one play.
+        this.readPos = 0;
+        this.writePos = 0;
+        this.available = 0;
+        this.started = false;
+        this.postStats();
+      }
+    };
   }
 
   enqueue(interleaved) {
@@ -31,6 +46,14 @@ class PCMPlayer extends AudioWorkletProcessor {
       this.writePos = (this.writePos + 1) % this.capacity;
     }
     this.available = Math.min(this.available + frames, this.capacity);
+  }
+
+  postStats() {
+    this.port.postMessage({
+      underruns: this.underruns,
+      bufferedSeconds: this.available / sampleRate,
+      playing: this.started,
+    });
   }
 
   process(_inputs, outputs) {
@@ -56,11 +79,7 @@ class PCMPlayer extends AudioWorkletProcessor {
     this.framesSinceStats += frames;
     if (this.framesSinceStats >= sampleRate * STATS_INTERVAL_SECONDS) {
       this.framesSinceStats = 0;
-      this.port.postMessage({
-        underruns: this.underruns,
-        bufferedSeconds: this.available / sampleRate,
-        playing: this.started,
-      });
+      this.postStats();
     }
     return true;
   }

@@ -31,9 +31,10 @@ Run **`/berlitz-engineering:pre-pr-check`** to verify this list before opening a
 <!-- Fill in only what the agent cannot infer from the code itself. Keep each
      line concrete and verifiable - "run `npm test`", not "test your work". -->
 
-- Build / run / test: from `backend/`: `uv sync`, run with `uv run magenta-dj`,
-  test with `uv run pytest`, format/lint with `uv run ruff format .` and
-  `uv run ruff check .`
+- Build / run / test: use the root `justfile` — `just setup`, `just run`,
+  `just test`, `just lint`, `just check` (lint + tests; what a PR must pass).
+  Underlying tools: uv + pytest + ruff in `backend/`, npm + vitest + eslint
+  in `frontend/`
 - Branch & PR naming: one branch per roadmap milestone or issue, kebab-case
   (e.g. `m1-one-deck-audible`)
 - Gotchas: model weights live outside the repo in

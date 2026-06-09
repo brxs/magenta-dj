@@ -11,13 +11,12 @@ and [`docs/adr/`](docs/adr/) for the architecture decisions.
 - [uv](https://docs.astral.sh/uv/)
 - ~2 GB disk for model weights (downloaded on first setup)
 
+All common tasks live in the [`justfile`](justfile) — run `just` to list them.
+
 ## Setup
 
 ```sh
-cd backend
-uv sync
-uv run mrt models init                  # shared resources (~1.3 GB)
-uv run mrt models download mrt2_small   # deck model (~450 MB)
+just setup   # backend deps, model weights (~1.8 GB), frontend deps + build
 ```
 
 Models land in `~/Documents/Magenta/magenta-rt-v2` (override with
@@ -26,12 +25,21 @@ Models land in `~/Documents/Magenta/magenta-rt-v2` (override with
 ## Run
 
 ```sh
-cd backend
-uv run magenta-dj
+just run
 ```
 
-Then open <http://127.0.0.1:8000> — the M1 test page: connect, set a prompt,
-play. The page shows buffer level and underrun count.
+Then open <http://127.0.0.1:8000> — set a style prompt, hit play, ride the
+volume fader. The health row shows the stream buffer, underrun count, and
+generation speed.
 
-`backend/scripts/verify_m1.py` checks the M1 exit criteria end-to-end against
-a running server (`uv run python scripts/verify_m1.py 660`).
+For frontend development: `just dev-backend` in one terminal, `just
+dev-frontend` in another (the Vite dev server proxies `/ws` to the backend).
+
+## Verify
+
+- `just test` — backend pytest + frontend vitest
+- `just lint` — format check, ruff, eslint, tsc
+- `just check` — both of the above; what a PR must pass
+- `just verify-stream` / `just verify-ui` — e2e against a running server
+  (UI e2e needs Playwright Chromium once: `npx playwright install chromium`
+  in `frontend/`)
