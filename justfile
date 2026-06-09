@@ -11,6 +11,10 @@ setup:
     cd frontend && npm install
     just build
 
+# Optional: the higher-quality deck model (per-deck picker in the UI).
+download-base-model:
+    cd backend && uv run mrt models download mrt2_base
+
 # Build the frontend (the backend serves frontend/dist).
 build:
     cd frontend && npm run build
