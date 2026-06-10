@@ -43,7 +43,29 @@ describe('persistence', () => {
 
   it('round-trips app settings', () => {
     updateAppSettings({ crossfade: 0.8 })
-    expect(loadAppSettings()).toEqual({ crossfade: 0.8 })
+    updateAppSettings({
+      cueMix: 0.3,
+      cueDevice: { deviceId: 'flx4', label: 'DDJ-FLX4' },
+    })
+    expect(loadAppSettings()).toEqual({
+      crossfade: 0.8,
+      cueMix: 0.3,
+      cueDevice: { deviceId: 'flx4', label: 'DDJ-FLX4' },
+    })
+  })
+
+  it('keeps an explicit cue-device opt-out distinct from never-set', () => {
+    expect(loadAppSettings().cueDevice).toBeUndefined()
+    updateAppSettings({ cueDevice: null })
+    expect(loadAppSettings().cueDevice).toBeNull()
+  })
+
+  it('drops a malformed cue device but keeps the cue mix', () => {
+    localStorage.setItem(
+      'magenta-dj:v1',
+      JSON.stringify({ app: { cueMix: 2, cueDevice: { deviceId: 7 } } }),
+    )
+    expect(loadAppSettings()).toEqual({ cueMix: 1 }) // clamped, device dropped
   })
 
   it('treats corrupt storage as absent', () => {

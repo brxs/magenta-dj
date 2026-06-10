@@ -3,6 +3,7 @@
 
 import type { DeckId } from './audio/engine'
 import { EQ_BANDS, type EqBand } from './audio/eq'
+import type { AudioOutputDevice } from './audio/outputs'
 import type { PadPoint } from './deck/padWeights'
 
 export type DeckSettings = {
@@ -14,6 +15,8 @@ export type DeckSettings = {
 
 export type AppSettings = {
   crossfade: number
+  cueMix: number
+  cueDevice: AudioOutputDevice | null
 }
 
 const STORAGE_KEY = 'magenta-dj:v1'
@@ -105,9 +108,24 @@ export function updateDeckSettings(
 export function loadAppSettings(): Partial<AppSettings> {
   const stored = read().app
   if (!stored || typeof stored !== 'object') return {}
-  return Number.isFinite(stored.crossfade)
-    ? { crossfade: clamp01(stored.crossfade as number) }
-    : {}
+  const settings: Partial<AppSettings> = {}
+  if (Number.isFinite(stored.crossfade)) {
+    settings.crossfade = clamp01(stored.crossfade as number)
+  }
+  if (Number.isFinite(stored.cueMix)) {
+    settings.cueMix = clamp01(stored.cueMix as number)
+  }
+  const cueDevice = stored.cueDevice
+  if (cueDevice === null) {
+    settings.cueDevice = null
+  } else if (
+    cueDevice &&
+    typeof cueDevice.deviceId === 'string' &&
+    typeof cueDevice.label === 'string'
+  ) {
+    settings.cueDevice = { deviceId: cueDevice.deviceId, label: cueDevice.label }
+  }
+  return settings
 }
 
 export function updateAppSettings(partial: Partial<AppSettings>) {

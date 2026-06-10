@@ -61,6 +61,8 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     reset: vi.fn(),
     setVolume: vi.fn(),
     setEq: vi.fn(),
+    setCue: vi.fn(),
+    setOnAir: vi.fn(),
     getLevel: vi.fn(() => 0),
     getWaveformRange: vi.fn(() => [0, 0] as [number, number]),
     dispose: vi.fn(),
@@ -69,6 +71,8 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     createDeckChannel: vi.fn(async () => channel),
     resume: vi.fn(async () => {}),
     setCrossfade: vi.fn(),
+    setCueMix: vi.fn(),
+    setCueDevice: vi.fn(async () => {}),
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob()),
     getMasterLevel: vi.fn(() => 0),
@@ -228,6 +232,25 @@ describe('useDeck connection', () => {
     updateDeckSettings('a', { volume: 0.55 })
     const { result } = renderDeck(makeFakeEngine().engine)
     expect(result.current.volume).toBe(0.55)
+  })
+
+  it('seeds a pre-play cue toggle into the channel and routes live ones', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+
+    // Toggled before the channel exists — must ride along at creation.
+    act(() => result.current.setCue(true))
+    expect(result.current.cue).toBe(true)
+
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+    expect(vi.mocked(engine.createDeckChannel).mock.calls[0][1]).toMatchObject({
+      cue: true,
+    })
+
+    act(() => result.current.setCue(false))
+    expect(channel.setCue).toHaveBeenCalledWith(false)
+    expect(result.current.cue).toBe(false)
   })
 
   it('surfaces malformed frames as dropped, not crashes', () => {

@@ -18,6 +18,10 @@ export type DeckControls = {
   state: DeckState
   volume: number
   eq: Record<EqBand, number>
+  /** Headphone cue (PFL) on this channel. Deliberately not persisted:
+   * a reload never blasts the phones unexpectedly. */
+  cue: boolean
+  setCue: (on: boolean) => void
   play: () => Promise<void>
   stop: () => void
   setStyle: (style: ActiveStyle) => void
@@ -41,6 +45,8 @@ export function useDeck(deckId: DeckId): DeckControls {
       loadDeckSettings(deckId).eq ?? { low: EQ_FLAT, mid: EQ_FLAT, high: EQ_FLAT },
   )
   const eqRef = useRef(eq)
+  const [cue, setCueState] = useState(false)
+  const cueRef = useRef(cue)
 
   const socketRef = useRef<WebSocket | null>(null)
   const channelRef = useRef<DeckChannel | null>(null)
@@ -53,7 +59,7 @@ export function useDeck(deckId: DeckId): DeckControls {
       channelPromiseRef.current = engine
         .createDeckChannel(
           deckId,
-          { volume: volumeRef.current, eq: eqRef.current },
+          { volume: volumeRef.current, eq: eqRef.current, cue: cueRef.current },
           (stats) => dispatch({ type: 'worklet_stats', stats }),
         )
         .then((channel) => {
@@ -190,6 +196,12 @@ export function useDeck(deckId: DeckId): DeckControls {
     [],
   )
 
+  const setCue = useCallback((on: boolean) => {
+    setCueState(on)
+    cueRef.current = on
+    channelRef.current?.setCue(on)
+  }, [])
+
   const setEqBand = useCallback(
     (band: EqBand, value: number) => {
       const next = { ...eqRef.current, [band]: value }
@@ -205,6 +217,8 @@ export function useDeck(deckId: DeckId): DeckControls {
     state,
     volume,
     eq,
+    cue,
+    setCue,
     play,
     stop,
     setStyle,

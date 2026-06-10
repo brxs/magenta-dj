@@ -12,6 +12,8 @@ function makeEngine(overrides: Partial<AudioEngine> = {}): AudioEngine {
     createDeckChannel: vi.fn(),
     resume: vi.fn(async () => {}),
     setCrossfade: vi.fn(),
+    setCueMix: vi.fn(),
+    setCueDevice: vi.fn(async () => {}),
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob(['x'], { type: 'audio/wav' })),
     getMasterLevel: vi.fn(() => 0),
