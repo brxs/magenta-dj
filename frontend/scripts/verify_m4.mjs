@@ -27,10 +27,8 @@ try {
     await deck.getByLabel('Style target').fill(target)
     await deck.getByRole('button', { name: 'Add' }).click()
   }
-  await deck.getByLabel('Tempo hint (bpm)').fill('124')
-  await deck.getByLabel('Tempo hint (bpm)').blur()
   await deck.getByText(/^Playing: /).waitFor({ timeout: 20_000 })
-  console.log(`style: ${TARGETS.length} targets on the pad (with tempo hint)`)
+  console.log(`style: ${TARGETS.length} targets on the pad`)
 
   await deck.getByRole('button', { name: 'Play' }).click()
   await deck.getByRole('button', { name: 'Stop' }).waitFor({ timeout: 10_000 })

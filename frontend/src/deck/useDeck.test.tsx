@@ -111,7 +111,7 @@ describe('useDeck connection', () => {
   it('drops commands while the socket is not open', () => {
     const { result } = renderDeck(makeFakeEngine().engine)
 
-    const style = { prompts: [{ text: 'warm disco funk', weight: 1 }], bpm: null }
+    const style = { prompts: [{ text: 'warm disco funk', weight: 1 }] }
     act(() => result.current.setStyle(style))
     expect(socket(0).sent).toHaveLength(0)
 
@@ -121,7 +121,6 @@ describe('useDeck connection', () => {
       JSON.stringify({
         type: 'set_style',
         prompts: [{ text: 'warm disco funk', weight: 1 }],
-        bpm: null,
       }),
     ])
   })

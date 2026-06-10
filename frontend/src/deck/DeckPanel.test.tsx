@@ -74,7 +74,6 @@ describe('DeckPanel', () => {
     addTarget('  warm disco funk  ')
     expect(onSetStyle).toHaveBeenCalledWith({
       prompts: [{ text: 'warm disco funk', weight: 1 }],
-      bpm: null,
     })
   })
 
@@ -101,28 +100,7 @@ describe('DeckPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove funk' }))
     expect(onSetStyle.mock.calls.at(-1)![0]).toEqual({
       prompts: [{ text: 'techno', weight: 1 }],
-      bpm: null,
     })
-  })
-
-  it('includes a valid tempo hint and drops the style send on an invalid one', () => {
-    const onSetStyle = vi.fn()
-    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
-    fireEvent.change(screen.getByLabelText('Tempo hint (bpm)'), {
-      target: { value: '124' },
-    })
-    addTarget('funk')
-    expect(onSetStyle).toHaveBeenCalledWith({
-      prompts: [{ text: 'funk', weight: 1 }],
-      bpm: 124,
-    })
-
-    onSetStyle.mockClear()
-    fireEvent.change(screen.getByLabelText('Tempo hint (bpm)'), {
-      target: { value: '999' },
-    })
-    addTarget('techno')
-    expect(onSetStyle).not.toHaveBeenCalled()
   })
 
   it('keeps the pad locked until there are two targets to blend', () => {
@@ -197,7 +175,6 @@ describe('DeckPanel', () => {
           { text: 'funk', weight: 0.7 },
           { text: 'techno', weight: 0.3 },
         ],
-        bpm: 124,
       },
     })
     expect(screen.getByText('Playing: 70% funk · 30% techno')).toBeInTheDocument()

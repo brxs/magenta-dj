@@ -174,12 +174,7 @@ def validate_command(parsed: object) -> tuple[dict | None, str | None]:
             clean_prompts.append({"text": text, "weight": float(weight)})
         if not any(entry["weight"] > 0 for entry in clean_prompts):
             return None, "set_style needs at least one prompt with weight > 0"
-        bpm = parsed.get("bpm")
-        if bpm is not None and (
-            isinstance(bpm, bool) or not isinstance(bpm, int) or not 40 <= bpm <= 240
-        ):
-            return None, "set_style 'bpm' must be an integer in [40, 240]"
-        return {"type": "set_style", "prompts": clean_prompts, "bpm": bpm}, None
+        return {"type": "set_style", "prompts": clean_prompts}, None
     if kind == "set_model":
         model = parsed.get("model")
         if model in engine.KNOWN_MODELS:

@@ -20,7 +20,6 @@ export type ServerEvent =
   | {
       event: 'style_applied'
       prompts: StylePrompt[]
-      bpm: number | null
       effective_from_chunk: number
     }
   | { event: 'model_loading'; model: string }
@@ -43,7 +42,6 @@ export type StylePrompt = { text: string; weight: number }
 /** The style the worker confirmed it is generating with. */
 export type ActiveStyle = {
   prompts: StylePrompt[]
-  bpm: number | null
 }
 
 export type DeckAction =
@@ -164,7 +162,7 @@ function applyServerEvent(state: DeckState, event: ServerEvent): DeckState {
     case 'style_applied':
       return {
         ...state,
-        activeStyle: { prompts: event.prompts, bpm: event.bpm },
+        activeStyle: { prompts: event.prompts },
         error: null,
       }
     case 'error':

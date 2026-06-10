@@ -15,8 +15,6 @@ import './deck.css'
 // The worker holds ~3s of lead (see backend worker pacing); the meter shows
 // health relative to that target.
 const BUFFER_TARGET_SECONDS = 3
-const BPM_MIN = 40
-const BPM_MAX = 240
 // Matches the backend's MAX_STYLE_PROMPTS.
 const MAX_TARGETS = 8
 // Cursor drags re-blend cached embeddings server-side; ~7/s is plenty when
@@ -50,7 +48,6 @@ export function DeckPanel({
   const [targets, setTargets] = useState<(PadPoint & { text: string })[]>([])
   const [cursor, setCursor] = useState<PadPoint>({ x: 0.5, y: 0.5 })
   const [targetDraft, setTargetDraft] = useState('')
-  const [bpmDraft, setBpmDraft] = useState('')
   const throttleRef = useRef<{ timer?: ReturnType<typeof setTimeout>; last: number }>({
     last: 0,
   })
@@ -68,26 +65,16 @@ export function DeckPanel({
   const bufferTone =
     !state.playing || bufferFraction >= 0.5 ? 'ok' : bufferFraction >= 0.25 ? 'warn' : 'danger'
 
-  function parsedBpm(): number | null | undefined {
-    if (!bpmDraft.trim()) return null
-    const bpm = Number(bpmDraft)
-    if (!Number.isInteger(bpm) || bpm < BPM_MIN || bpm > BPM_MAX) return undefined
-    return bpm
-  }
-
   type Target = PadPoint & { text: string }
 
   function styleFor(nextTargets: Target[], nextCursor: PadPoint): ActiveStyle | null {
     if (nextTargets.length === 0) return null
-    const bpm = parsedBpm()
-    if (bpm === undefined) return null
     const weights = padWeights(nextTargets, nextCursor)
     return {
       prompts: nextTargets.map((target, index) => ({
         text: target.text,
         weight: weights[index],
       })),
-      bpm,
     }
   }
 
@@ -229,17 +216,6 @@ export function DeckPanel({
         onTargetMove={handleTargetMove}
       />
 
-      <div className="deck__prompt-row">
-        <TextField
-          label={t('deck.style.bpmHint')}
-          type="number"
-          min={BPM_MIN}
-          max={BPM_MAX}
-          value={bpmDraft}
-          onChange={(event) => setBpmDraft(event.target.value)}
-          onBlur={() => sendStyle(targets, cursor)}
-        />
-      </div>
       <p className="deck__active-prompt">{activeSummary}</p>
 
       <div className="deck__transport">

@@ -90,9 +90,10 @@ scope: each deck has a **2D style pad** with up to 8 prompt targets —
 inverse-distance weighting blends the cursor position over all of them
 (exact at a target, smooth everywhere else), applied at chunk boundaries
 via cached-embedding averaging. Verified with a three-target glide on an
-unbroken stream (zero underruns). Tempo proved *partially* steerable
-([`spike-bpm.md`](spike-bpm.md)), so the UI ships a clearly-labelled tempo
-hint and no nudge/sync.
+unbroken stream (zero underruns). Tempo proved emergent from style — text
+hints are unreliable and injected clock conditioning is not read as a rate
+([`spike-bpm.md`](spike-bpm.md), three rounds) — so **no tempo control
+ships**; a bpm phrase typed into a style prompt is the honest interface.
 
 **Goal:** smoother, more musical transitions.
 

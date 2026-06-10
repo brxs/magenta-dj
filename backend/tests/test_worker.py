@@ -21,10 +21,10 @@ class FakeEngine:
         self.fail_set_style = False
         self.fail_generate = False
 
-    def set_style(self, prompts, bpm=None):
+    def set_style(self, prompts):
         if self.fail_set_style:
             raise RuntimeError("embed blew up")
-        self.styles.append((prompts, bpm))
+        self.styles.append(prompts)
 
     def generate_chunk(self):
         if self.fail_generate:
@@ -83,26 +83,23 @@ def test_set_prompt_applies_as_single_prompt_style(deck):
     deck.send(type="set_prompt", prompt="warm disco funk")
     applied = deck.next_event("style_applied")
     assert applied["prompts"] == [{"text": "warm disco funk", "weight": 1.0}]
-    assert deck.engine.styles[-1] == ([("warm disco funk", 1.0)], None)
+    assert deck.engine.styles[-1] == [("warm disco funk", 1.0)]
 
 
-def test_set_style_blends_many_prompts_with_bpm(deck):
+def test_set_style_blends_many_prompts(deck):
     prompts = [
         {"text": "warm disco funk", "weight": 0.5},
         {"text": "dark minimal techno", "weight": 0.3},
         {"text": "dub reggae", "weight": 0.2},
     ]
-    deck.send(type="set_style", prompts=prompts, bpm=124)
+    deck.send(type="set_style", prompts=prompts)
     applied = deck.next_event("style_applied")
     assert applied["prompts"] == prompts
-    assert applied["bpm"] == 124
-    blended, bpm = deck.engine.styles[-1]
-    assert blended == [
+    assert deck.engine.styles[-1] == [
         ("warm disco funk", 0.5),
         ("dark minimal techno", 0.3),
         ("dub reggae", 0.2),
     ]
-    assert bpm == 124
 
 
 def test_set_style_failure_keeps_worker_alive(deck):

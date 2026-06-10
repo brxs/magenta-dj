@@ -62,16 +62,13 @@ class DeckEngine:
         """Embed a text prompt; takes effect on the next generate_chunk()."""
         self.set_style([(prompt, 1.0)])
 
-    def set_style(
-        self, prompts: list[tuple[str, float]], bpm: int | None = None
-    ) -> None:
+    def set_style(self, prompts: list[tuple[str, float]]) -> None:
         """Blend weighted prompt embeddings into the active style.
 
         MusicCoCa embeddings are plain 768-dim vectors (docs/spike-mrt2.md),
-        so a morph between prompts is their weighted average. An optional
-        tempo hint is appended to each prompt text before embedding
-        (docs/spike-bpm.md for how steerable that is). Takes effect on the
-        next generate_chunk().
+        so a morph between prompts is their weighted average. Takes effect
+        on the next generate_chunk(). Tempo is emergent from style — there
+        is deliberately no tempo parameter (docs/spike-bpm.md).
         """
         weighted = [(text, weight) for text, weight in prompts if weight > 0]
         if not weighted:
@@ -79,8 +76,7 @@ class DeckEngine:
         total = sum(weight for _, weight in weighted)
         blend = np.zeros(0)
         for text, weight in weighted:
-            full = f"{text}, {bpm} bpm" if bpm else text
-            embedding = self._embed_cached(full).astype(np.float32)
+            embedding = self._embed_cached(text).astype(np.float32)
             term = (weight / total) * embedding
             blend = term if blend.size == 0 else blend + term
         self._style = blend

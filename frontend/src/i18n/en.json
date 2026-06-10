@@ -24,7 +24,6 @@
       "addTarget": "Add",
       "removeTarget": "Remove {{prompt}}",
       "pad": "Style pad",
-      "bpmHint": "Tempo hint (bpm)",
       "active": "Playing: {{summary}}"
     },
     "play": "Play",

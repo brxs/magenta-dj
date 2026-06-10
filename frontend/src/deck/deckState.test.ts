@@ -84,7 +84,6 @@ describe('deckReducer', () => {
               { text: 'funk', weight: 0.7 },
               { text: 'techno', weight: 0.3 },
             ],
-            bpm: 124,
             effective_from_chunk: 3,
           },
         },
@@ -97,7 +96,6 @@ describe('deckReducer', () => {
         { text: 'funk', weight: 0.7 },
         { text: 'techno', weight: 0.3 },
       ],
-      bpm: 124,
     })
   })
 
@@ -109,7 +107,6 @@ describe('deckReducer', () => {
         event: {
           event: 'style_applied',
           prompts: [{ text: 'funk', weight: 1 }],
-          bpm: null,
           effective_from_chunk: 1,
         },
       },

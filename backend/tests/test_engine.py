@@ -31,12 +31,6 @@ def test_blends_weighted_embeddings_normalized():
     np.testing.assert_allclose(engine._style, [0.75, 0.25])
 
 
-def test_bpm_hint_is_embedded_into_the_prompt_text():
-    engine, calls = make_engine({"funk, 124 bpm": np.array([1.0])})
-    engine.set_style([("funk", 1.0)], bpm=124)
-    assert calls == ["funk, 124 bpm"]
-
-
 def test_embeddings_are_cached_across_morph_moves():
     engine, calls = make_engine(
         {"funk": np.array([1.0, 0.0]), "techno": np.array([0.0, 1.0])}

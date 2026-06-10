@@ -15,8 +15,11 @@ follows the hint within a style's plausible tempo range and ignores it
 outside (techno refuses to crawl at 90). Per the roadmap's M4 rule ("the UI
 only exposes the tempo control that actually works"):
 
-- **Ship:** an optional per-deck *tempo hint* appended to the prompt text
-  before embedding (`DeckEngine.set_style(bpm=…)`), labelled as a hint.
+- ~~**Ship:** an optional per-deck *tempo hint* appended to the prompt
+  text before embedding, labelled as a hint.~~ **Removed after round 3**
+  (below): the hint sometimes pushes tempo the *wrong* way, so a dedicated
+  control implies agency that doesn't exist. Typing "…, 128 bpm" into a
+  style prompt does the same thing, with honest expectations.
 - **Don't ship:** per-deck nudge/sync, beat-matching, or anything implying
   the model obeys exact tempos. Revisit only if a future MRT exposes real
   tempo conditioning.

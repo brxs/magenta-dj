@@ -75,11 +75,9 @@ def run_deck_worker(
                     entries = [{"text": cmd["prompt"], "weight": 1.0}]
                 else:
                     entries = cmd["prompts"]
-                bpm = cmd.get("bpm")
                 try:
                     engine.set_style(
-                        [(entry["text"], entry["weight"]) for entry in entries],
-                        bpm=bpm,
+                        [(entry["text"], entry["weight"]) for entry in entries]
                     )
                 except Exception:
                     # The deck must survive a bad prompt; the controller
@@ -95,7 +93,7 @@ def run_deck_worker(
                         )
                     )
                 else:
-                    style = {"prompts": entries, "bpm": bpm}
+                    style = {"prompts": entries}
                     out_queue.put(
                         (
                             "status",
