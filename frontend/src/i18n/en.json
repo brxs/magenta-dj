@@ -6,6 +6,9 @@
   },
   "mixer": {
     "title": "Mixer",
+    "channel": "Channel {{id}}",
+    "channelLevel": "Deck {{id}} level",
+    "masterLevel": "Master level",
     "crossfade": "Crossfade",
     "deckA": "A",
     "deckB": "B",
@@ -16,6 +19,7 @@
   },
   "deck": {
     "title": "Deck {{id}}",
+    "waveform": "Deck {{id}} signal",
     "model": {
       "label": "Model"
     },

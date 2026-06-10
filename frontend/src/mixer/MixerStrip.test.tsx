@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { AudioEngineProvider } from '../audio/AudioEngineProvider'
 import type { AudioEngine } from '../audio/engine'
-import { Mixer } from './Mixer'
+import { MixerStrip, type ChannelControls } from './MixerStrip'
 
 function makeEngine(overrides: Partial<AudioEngine> = {}): AudioEngine {
   return {
@@ -12,19 +12,50 @@ function makeEngine(overrides: Partial<AudioEngine> = {}): AudioEngine {
     setCrossfade: vi.fn(),
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob(['x'], { type: 'audio/wav' })),
+    getMasterLevel: vi.fn(() => 0),
     ...overrides,
   }
 }
 
-function renderMixer(engine: AudioEngine) {
+function makeChannel(overrides: Partial<ChannelControls> = {}): ChannelControls {
+  return {
+    volume: 0.8,
+    eq: { low: 0.5, mid: 0.5, high: 0.5 },
+    onSetVolume: vi.fn(),
+    onSetEqBand: vi.fn(),
+    getLevel: () => 0,
+    ...overrides,
+  }
+}
+
+function renderMixer(
+  engine: AudioEngine,
+  channels: Record<'a' | 'b', ChannelControls> = { a: makeChannel(), b: makeChannel() },
+) {
   return render(
     <AudioEngineProvider engine={engine}>
-      <Mixer crossfade={0.5} onCrossfadeChange={() => {}} />
+      <MixerStrip channels={channels} crossfade={0.5} onCrossfadeChange={() => {}} />
     </AudioEngineProvider>,
   )
 }
 
-describe('Mixer recording', () => {
+describe('MixerStrip channels', () => {
+  it('routes EQ knob and fader moves to the right channel', () => {
+    const a = makeChannel()
+    const b = makeChannel()
+    renderMixer(makeEngine(), { a, b })
+
+    fireEvent.change(screen.getAllByLabelText('EQ Low')[0], { target: { value: '0' } })
+    expect(a.onSetEqBand).toHaveBeenCalledWith('low', 0)
+    expect(b.onSetEqBand).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getAllByLabelText('Volume')[1], { target: { value: '0.3' } })
+    expect(b.onSetVolume).toHaveBeenCalledWith(0.3)
+    expect(a.onSetVolume).not.toHaveBeenCalled()
+  })
+})
+
+describe('MixerStrip recording', () => {
   it('records the master bus and downloads the WAV on stop', async () => {
     const engine = makeEngine()
     const objectUrl = vi

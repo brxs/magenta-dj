@@ -61,6 +61,8 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     reset: vi.fn(),
     setVolume: vi.fn(),
     setEq: vi.fn(),
+    getLevel: vi.fn(() => 0),
+    getWaveformRange: vi.fn(() => [0, 0] as [number, number]),
     dispose: vi.fn(),
   }
   const engine: AudioEngine = {
@@ -69,6 +71,7 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     setCrossfade: vi.fn(),
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob()),
+    getMasterLevel: vi.fn(() => 0),
     ...overrides,
   }
   return { engine, channel }

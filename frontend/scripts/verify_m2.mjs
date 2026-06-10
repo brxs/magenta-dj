@@ -55,7 +55,7 @@ try {
   )
 
   // Volume fader accepts input and reflects it.
-  const volume = deckA.getByLabel('Volume')
+  const volume = page.getByRole('group', { name: 'Channel a' }).getByLabel('Volume')
   await volume.fill('0.3')
   if ((await volume.inputValue()) !== '0.3') {
     throw new Error('volume fader did not take the new value')

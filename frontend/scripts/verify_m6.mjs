@@ -88,7 +88,9 @@ try {
   const flat = bandEnergies(await recordWav())
   console.log(`flat:   low=${flat.low.toExponential(2)} high=${flat.high.toExponential(2)}`)
 
-  await deckA.getByLabel('EQ Low').fill('0') // kill the lows on deck A
+  const channelA = page.getByRole('group', { name: 'Channel a' })
+  const channelB = page.getByRole('group', { name: 'Channel b' })
+  await channelA.getByLabel('EQ Low').fill('0') // kill the lows on deck A
   await page.waitForTimeout(1_000) // EQ is client-side: applies instantly
   const killed = bandEnergies(await recordWav())
   console.log(`killed: low=${killed.low.toExponential(2)} high=${killed.high.toExponential(2)}`)
@@ -106,10 +108,10 @@ try {
   await deckB.getByRole('button', { name: 'Play' }).click()
   await deckB.getByRole('button', { name: 'Stop', exact: true }).waitFor()
   for (const value of ['1', '0.3', '0.5']) {
-    await deckA.getByLabel('EQ Mid').fill(value)
+    await channelA.getByLabel('EQ Mid').fill(value)
     await page.waitForTimeout(2_000)
   }
-  if ((await deckB.getByLabel('EQ Mid').inputValue()) !== '0.5') {
+  if ((await channelB.getByLabel('EQ Mid').inputValue()) !== '0.5') {
     throw new Error("deck a's EQ moves leaked into deck b's controls")
   }
   const underrunsB = Number(
@@ -123,8 +125,8 @@ try {
   // Reload: the kill must be restored on deck A, flat elsewhere.
   await page.reload()
   await deckA.getByText('Connected', { exact: true }).waitFor({ timeout: 10_000 })
-  const restoredLow = await deckA.getByLabel('EQ Low').inputValue()
-  const restoredHi = await deckA.getByLabel('EQ Hi').inputValue()
+  const restoredLow = await channelA.getByLabel('EQ Low').inputValue()
+  const restoredHi = await channelA.getByLabel('EQ Hi').inputValue()
   console.log(`after reload: deck a EQ Low=${restoredLow} EQ Hi=${restoredHi}`)
 
   await page.screenshot({ path: 'm6-verification.png', fullPage: true })

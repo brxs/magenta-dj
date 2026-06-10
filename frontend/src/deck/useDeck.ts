@@ -25,6 +25,8 @@ export type DeckControls = {
   restartWorker: () => void
   setVolume: (volume: number) => void
   setEqBand: (band: EqBand, value: number) => void
+  getChannelLevel: () => number
+  getChannelWaveformRange: () => [number, number]
 }
 
 /** Owns one deck's WebSocket and its channel on the shared audio engine
@@ -178,6 +180,16 @@ export function useDeck(deckId: DeckId): DeckControls {
     [deckId],
   )
 
+  const getChannelLevel = useCallback(
+    () => channelRef.current?.getLevel() ?? 0,
+    [],
+  )
+
+  const getChannelWaveformRange = useCallback(
+    (): [number, number] => channelRef.current?.getWaveformRange() ?? [0, 0],
+    [],
+  )
+
   const setEqBand = useCallback(
     (band: EqBand, value: number) => {
       const next = { ...eqRef.current, [band]: value }
@@ -200,5 +212,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     restartWorker,
     setVolume,
     setEqBand,
+    getChannelLevel,
+    getChannelWaveformRange,
   }
 }

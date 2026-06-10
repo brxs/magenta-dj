@@ -70,7 +70,8 @@ try {
   // --- Persistence across reload ---
   await page.getByLabel('Crossfade').fill('0.8')
   const volumeBefore = '0.65'
-  await deck.getByLabel('Volume').fill(volumeBefore)
+  const channelA = page.getByRole('group', { name: 'Channel a' })
+  await channelA.getByLabel('Volume').fill(volumeBefore)
   await page.waitForTimeout(300)
   await page.reload()
 
@@ -84,7 +85,7 @@ try {
   if ((await page.getByLabel('Crossfade').inputValue()) !== '0.8') {
     throw new Error('crossfade not restored after reload')
   }
-  if ((await deck.getByLabel('Volume').inputValue()) !== volumeBefore) {
+  if ((await channelA.getByLabel('Volume').inputValue()) !== volumeBefore) {
     throw new Error('deck volume not restored after reload')
   }
   console.log('persistence: targets, style, crossfade, volume restored after reload')

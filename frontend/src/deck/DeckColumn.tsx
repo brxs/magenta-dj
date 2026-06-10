@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import type { DeckId } from '../audio/engine'
 import { Button } from '../ui/Button'
 import { Meter } from '../ui/Meter'
+import { Panel } from '../ui/Panel'
 import { Select } from '../ui/Select'
-import { Slider } from '../ui/Slider'
 import { Stat } from '../ui/Stat'
 import { TextField } from '../ui/TextField'
+import { TransportButton } from '../ui/TransportButton'
+import { WaveformStrip } from '../ui/WaveformStrip'
 import { XYPad } from '../ui/XYPad'
-import { EQ_BANDS, type EqBand } from '../audio/eq'
-import type { DeckId } from '../audio/engine'
 import type { ActiveStyle, DeckState } from './deckState'
 import { padWeights, spawnPosition, type PadPoint } from './padWeights'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
@@ -54,33 +55,27 @@ function createSendThrottle(intervalMs: number) {
   }
 }
 
-type DeckPanelProps = {
+type DeckColumnProps = {
   deckId: DeckId
   state: DeckState
-  volume: number
-  eq: Record<EqBand, number>
+  getWaveformRange: () => [number, number]
   onPlay: () => void
   onStop: () => void
   onSetStyle: (style: ActiveStyle) => void
   onSetModel: (model: string) => void
   onRestart: () => void
-  onSetVolume: (volume: number) => void
-  onSetEqBand: (band: EqBand, value: number) => void
 }
 
-export function DeckPanel({
+export function DeckColumn({
   deckId,
   state,
-  volume,
-  eq,
+  getWaveformRange,
   onPlay,
   onStop,
   onSetStyle,
   onSetModel,
   onRestart,
-  onSetVolume,
-  onSetEqBand,
-}: DeckPanelProps) {
+}: DeckColumnProps) {
   const { t } = useTranslation()
   const [targets, setTargets] = useState<(PadPoint & { text: string })[]>(
     () => loadDeckSettings(deckId).targets ?? [],
@@ -220,12 +215,24 @@ export function DeckPanel({
   }))
 
   return (
-    <section className="deck" aria-label={t('deck.title', { id: deckId })}>
+    <section
+      className={`deck deck--${deckId}`}
+      aria-label={t('deck.title', { id: deckId })}
+    >
+      <WaveformStrip
+        label={t('deck.waveform', { id: deckId })}
+        getRange={getWaveformRange}
+        traceToken={`--color-deck-${deckId}`}
+      />
+
       <header className="deck__header">
         <h2 className="deck__title">{t('deck.title', { id: deckId })}</h2>
         <span
           className={`deck__status${connected ? '' : ' deck__status--disconnected'}`}
         >
+          <span
+            className={`deck__status-led${connected && !state.workerDied ? ' deck__status-led--on' : ''}`}
+          />
           {t(statusKey)}
         </span>
       </header>
@@ -240,122 +247,108 @@ export function DeckPanel({
         onChange={onSetModel}
       />
 
-      <div className="deck__prompt-row">
-        <TextField
-          label={t('deck.style.target')}
-          placeholder={t('deck.style.targetPlaceholder')}
-          data-shortcut={`deck-${deckId}-prompt`}
-          value={targetDraft}
-          onChange={(event) => setTargetDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') addTarget()
-          }}
+      <Panel className="deck__style">
+        <div className="deck__prompt-row">
+          <TextField
+            label={t('deck.style.target')}
+            placeholder={t('deck.style.targetPlaceholder')}
+            data-shortcut={`deck-${deckId}-prompt`}
+            value={targetDraft}
+            onChange={(event) => setTargetDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') addTarget()
+            }}
+          />
+          <Button
+            onClick={addTarget}
+            disabled={
+              !operable ||
+              !targetDraft.trim() ||
+              targets.length >= MAX_TARGETS ||
+              targets.some((target) => target.text === targetDraft.trim())
+            }
+          >
+            {t('deck.style.addTarget')}
+          </Button>
+        </div>
+
+        {targets.length > 0 && (
+          <ul className="deck__targets">
+            {targets.map((target) => (
+              <li key={target.text}>
+                <button
+                  className="deck__target-chip"
+                  onClick={() => removeTarget(target.text)}
+                  disabled={!operable}
+                  aria-label={t('deck.style.removeTarget', { prompt: target.text })}
+                >
+                  {target.text} ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <XYPad
+          label={t('deck.style.pad')}
+          targets={padTargets}
+          cursor={cursor}
+          disabled={!operable || targets.length === 0}
+          onChange={handleCursor}
+          onTargetMove={handleTargetMove}
         />
-        <Button
-          onClick={addTarget}
-          disabled={
-            !operable ||
-            !targetDraft.trim() ||
-            targets.length >= MAX_TARGETS ||
-            targets.some((target) => target.text === targetDraft.trim())
-          }
-        >
-          {t('deck.style.addTarget')}
-        </Button>
-      </div>
-
-      {targets.length > 0 && (
-        <ul className="deck__targets">
-          {targets.map((target) => (
-            <li key={target.text}>
-              <button
-                className="deck__target-chip"
-                onClick={() => removeTarget(target.text)}
-                disabled={!operable}
-                aria-label={t('deck.style.removeTarget', { prompt: target.text })}
-              >
-                {target.text} ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <XYPad
-        label={t('deck.style.pad')}
-        targets={padTargets}
-        cursor={cursor}
-        disabled={!operable || targets.length === 0}
-        onChange={handleCursor}
-        onTargetMove={handleTargetMove}
-      />
-
-      <p className="deck__active-prompt">{activeSummary}</p>
+        <p className="deck__active-prompt">{activeSummary}</p>
+      </Panel>
 
       <div className="deck__transport">
         {state.playing ? (
-          <Button variant="primary" onClick={onStop} disabled={!operable}>
-            {t('deck.stop')}
-          </Button>
-        ) : (
-          <Button variant="primary" onClick={onPlay} disabled={!operable}>
-            {t('deck.play')}
-          </Button>
-        )}
-      </div>
-
-      <Slider
-        label={t('deck.volume')}
-        min={0}
-        max={1}
-        step={0.01}
-        value={volume}
-        onChange={onSetVolume}
-      />
-
-      <div className="deck__eq">
-        {EQ_BANDS.map((band) => (
-          <Slider
-            key={band}
-            label={t(`deck.eq.${band}`)}
-            min={0}
-            max={1}
-            step={0.01}
-            value={eq[band]}
-            onChange={(value) => onSetEqBand(band, value)}
+          <TransportButton
+            kind="stop"
+            accent={deckId}
+            lit
+            label={t('deck.stop')}
+            disabled={!operable}
+            onClick={onStop}
           />
-        ))}
-      </div>
-
-      <div className="deck__health">
-        <Meter
-          label={t('deck.health.buffer')}
-          valueLabel={t('deck.health.bufferSeconds', {
-            seconds: state.bufferedSeconds.toFixed(1),
-          })}
-          fraction={bufferFraction}
-          tone={bufferTone}
-        />
-        <Stat
-          label={t('deck.health.underruns')}
-          value={String(state.underruns)}
-          tone={state.underruns > 0 ? 'danger' : 'default'}
-        />
-        <Stat
-          label={t('deck.health.generationSpeed')}
-          value={
-            state.generationSpeed === null
-              ? t('deck.health.noData')
-              : t('deck.health.generationSpeedValue', {
-                  rtf: state.generationSpeed.toFixed(2),
-                })
-          }
-          tone={
-            state.generationSpeed !== null && state.generationSpeed < 1
-              ? 'danger'
-              : 'default'
-          }
-        />
+        ) : (
+          <TransportButton
+            kind="play"
+            accent={deckId}
+            label={t('deck.play')}
+            disabled={!operable}
+            onClick={onPlay}
+          />
+        )}
+        <div className="deck__health">
+          <Meter
+            label={t('deck.health.buffer')}
+            valueLabel={t('deck.health.bufferSeconds', {
+              seconds: state.bufferedSeconds.toFixed(1),
+            })}
+            fraction={bufferFraction}
+            tone={bufferTone}
+          />
+          <Stat
+            label={t('deck.health.underruns')}
+            value={String(state.underruns)}
+            tone={state.underruns > 0 ? 'danger' : 'default'}
+          />
+          <Stat
+            label={t('deck.health.generationSpeed')}
+            value={
+              state.generationSpeed === null
+                ? t('deck.health.noData')
+                : t('deck.health.generationSpeedValue', {
+                    rtf: state.generationSpeed.toFixed(2),
+                  })
+            }
+            tone={
+              state.generationSpeed !== null && state.generationSpeed < 1
+                ? 'danger'
+                : 'default'
+            }
+          />
+        </div>
       </div>
 
       {state.workerDied && (
