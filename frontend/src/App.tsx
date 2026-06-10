@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 
 import { INITIAL_CROSSFADE } from './audio/engine'
 import { useAudioEngine } from './audio/engineContext'
+import { applyAppIntent } from './control/appIntents'
+import { useControlBus } from './control/busContext'
 import { MidiControls } from './control/MidiControls'
 import { DeckColumn } from './deck/DeckColumn'
 import { useDeck } from './deck/useDeck'
@@ -37,6 +39,19 @@ function App() {
     setCrossfade(position)
     updateAppSettings({ crossfade: position })
   }, [])
+
+  // Hardware intents (ADR-0005) for the state this component owns.
+  // Resubscribes every render so the handler always reads current deck
+  // state; the bus itself is a stable singleton.
+  const bus = useControlBus()
+  useEffect(() =>
+    bus.subscribe((intent) =>
+      applyAppIntent(intent, { a: deckA, b: deckB }, (position) => {
+        engine.setCrossfade(position)
+        handleCrossfade(position)
+      }),
+    ),
+  )
 
   const ramWarning = combinedRamWarning(
     { a: deckA.state.model, b: deckB.state.model },

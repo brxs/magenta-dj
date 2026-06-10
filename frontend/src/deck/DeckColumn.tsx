@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { DeckId } from '../audio/engine'
+import { useControlBus } from '../control/busContext'
 import { Button } from '../ui/Button'
 import { Meter } from '../ui/Meter'
 import { Panel } from '../ui/Panel'
@@ -12,7 +13,7 @@ import { TransportButton } from '../ui/TransportButton'
 import { WaveformStrip } from '../ui/WaveformStrip'
 import { XYPad } from '../ui/XYPad'
 import type { ActiveStyle, DeckState } from './deckState'
-import { padWeights, spawnPosition, type PadPoint } from './padWeights'
+import { padWeights, spawnPosition, sweepPosition, type PadPoint } from './padWeights'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import './deck.css'
 
@@ -183,6 +184,27 @@ export function DeckColumn({
     setCursor(next)
     sendStyleThrottled(targets, next)
   }
+
+  // Hardware style intents (ADR-0005) mirror the pointer paths and the
+  // pad's gating: HOT CUE pad N snaps the cursor onto target N (immediate
+  // send, like add/remove), the CFX knob sweeps the cursor with the same
+  // throttle as a drag. Resubscribes per render to read fresh state.
+  const bus = useControlBus()
+  useEffect(() =>
+    bus.subscribe((intent) => {
+      if (!operable || targets.length === 0) return
+      if (intent.kind === 'style_target' && intent.deck === deckId) {
+        const target = targets[intent.index]
+        if (!target) return
+        const next = { x: target.x, y: target.y }
+        setCursor(next)
+        sendStyle(targets, next)
+      } else if (intent.kind === 'style_sweep' && intent.deck === deckId) {
+        const next = sweepPosition(intent.value)
+        handleCursor(next.x, next.y)
+      }
+    }),
+  )
 
   function handleTargetMove(id: string, x: number, y: number) {
     const next = targets.map((target) =>

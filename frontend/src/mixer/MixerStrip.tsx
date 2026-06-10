@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { EQ_BANDS, type EqBand } from '../audio/eq'
 import type { DeckId } from '../audio/engine'
 import { useAudioEngine } from '../audio/engineContext'
+import { useControlBus } from '../control/busContext'
 import { Button } from '../ui/Button'
 import { Knob } from '../ui/Knob'
 import { LevelMeter } from '../ui/LevelMeter'
@@ -86,6 +87,15 @@ export function MixerStrip({ channels, crossfade, onCrossfadeChange }: MixerStri
       setBusy(false)
     }
   }
+
+  // Hardware record toggle (ADR-0005); the busy guard mirrors the button's
+  // disabled state. Resubscribes per render so the handler sees fresh state.
+  const bus = useControlBus()
+  useEffect(() =>
+    bus.subscribe((intent) => {
+      if (intent.kind === 'record_toggle' && !busy) void toggleRecording()
+    }),
+  )
 
   const deckIds: DeckId[] = ['a', 'b']
 
