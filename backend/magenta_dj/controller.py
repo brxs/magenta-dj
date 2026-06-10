@@ -21,7 +21,7 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
-from . import engine
+from . import cue, engine
 from .worker import run_deck_worker
 
 logger = logging.getLogger(__name__)
@@ -331,6 +331,55 @@ async def _pump_worker_output(deck: DeckProcess, websocket: WebSocket) -> None:
             await websocket.send_bytes(payload)
         else:
             await websocket.send_text(json.dumps(payload))
+
+
+@app.get("/api/cue/outputs")
+def cue_outputs() -> list[dict]:
+    """Output devices that can carry the cue on a separate phones pair
+    (ADR-0007); the phones picker lists them next to the browser sinks."""
+    return cue.phones_capable_outputs()
+
+
+# Like a deck, the cue sink takes exactly one client.
+cue_state = {"connected": False}
+
+
+@app.websocket("/ws/cue")
+async def cue_socket(websocket: WebSocket) -> None:
+    """Cue feed up from the browser: binary frames of interleaved stereo
+    float32 LE at 48 kHz, played to the phones pair of `?device=`."""
+    if cue_state["connected"]:
+        await websocket.close(code=4409, reason="cue already has a client")
+        return
+    cue_state["connected"] = True
+    sink = None
+    try:
+        device = websocket.query_params.get("device", "")
+        try:
+            # Opening a PortAudio stream blocks briefly; keep the loop free.
+            sink = await asyncio.to_thread(cue.CueSink, device)
+        except Exception as error:
+            logger.warning("cue sink for %r failed: %s", device, error)
+            await websocket.close(code=4404, reason=str(error))
+            return
+        await websocket.accept()
+        while True:
+            try:
+                payload = await websocket.receive_bytes()
+            except KeyError:
+                # A text frame; the cue socket is audio-only.
+                await _send_error(websocket, "expected a binary PCM frame")
+                continue
+            try:
+                sink.push(payload)
+            except ValueError as error:
+                await _send_error(websocket, str(error))
+    except WebSocketDisconnect:
+        pass
+    finally:
+        if sink is not None:
+            sink.close()
+        cue_state["connected"] = False
 
 
 # Registered after the WebSocket route so /ws/deck/* is matched first.
