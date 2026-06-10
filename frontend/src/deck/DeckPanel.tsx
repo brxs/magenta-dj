@@ -9,7 +9,7 @@ import { Stat } from '../ui/Stat'
 import { TextField } from '../ui/TextField'
 import { XYPad } from '../ui/XYPad'
 import type { ActiveStyle, DeckState } from './deckState'
-import { padWeights, targetPositions, type PadPoint } from './padWeights'
+import { padWeights, spawnPosition, type PadPoint } from './padWeights'
 import './deck.css'
 
 // The worker holds ~3s of lead (see backend worker pacing); the meter shows
@@ -47,7 +47,7 @@ export function DeckPanel({
   onSetVolume,
 }: DeckPanelProps) {
   const { t } = useTranslation()
-  const [targets, setTargets] = useState<string[]>([])
+  const [targets, setTargets] = useState<(PadPoint & { text: string })[]>([])
   const [cursor, setCursor] = useState<PadPoint>({ x: 0.5, y: 0.5 })
   const [targetDraft, setTargetDraft] = useState('')
   const [bpmDraft, setBpmDraft] = useState('')
@@ -75,49 +75,60 @@ export function DeckPanel({
     return bpm
   }
 
-  function styleFor(nextTargets: string[], nextCursor: PadPoint): ActiveStyle | null {
+  type Target = PadPoint & { text: string }
+
+  function styleFor(nextTargets: Target[], nextCursor: PadPoint): ActiveStyle | null {
     if (nextTargets.length === 0) return null
     const bpm = parsedBpm()
     if (bpm === undefined) return null
-    const weights = padWeights(targetPositions(nextTargets.length), nextCursor)
+    const weights = padWeights(nextTargets, nextCursor)
     return {
-      prompts: nextTargets.map((text, index) => ({ text, weight: weights[index] })),
+      prompts: nextTargets.map((target, index) => ({
+        text: target.text,
+        weight: weights[index],
+      })),
       bpm,
     }
   }
 
-  function sendStyle(nextTargets: string[], nextCursor: PadPoint) {
+  function sendStyle(nextTargets: Target[], nextCursor: PadPoint) {
     const style = styleFor(nextTargets, nextCursor)
     if (style) onSetStyle(style)
   }
 
-  function sendStyleThrottled(nextCursor: PadPoint) {
+  function sendStyleThrottled(nextTargets: Target[], nextCursor: PadPoint) {
     const throttle = throttleRef.current
     clearTimeout(throttle.timer)
     const elapsed = Date.now() - throttle.last
     if (elapsed >= STYLE_SEND_INTERVAL_MS) {
       throttle.last = Date.now()
-      sendStyle(targets, nextCursor)
+      sendStyle(nextTargets, nextCursor)
     } else {
-      // Trailing send so the cursor's resting place always lands.
+      // Trailing send so the gesture's resting place always lands.
       throttle.timer = setTimeout(() => {
         throttle.last = Date.now()
-        sendStyle(targets, nextCursor)
+        sendStyle(nextTargets, nextCursor)
       }, STYLE_SEND_INTERVAL_MS - elapsed)
     }
   }
 
   function addTarget() {
     const text = targetDraft.trim()
-    if (!text || targets.includes(text) || targets.length >= MAX_TARGETS) return
-    const next = [...targets, text]
+    if (
+      !text ||
+      targets.some((target) => target.text === text) ||
+      targets.length >= MAX_TARGETS
+    ) {
+      return
+    }
+    const next = [...targets, { text, ...spawnPosition(targets) }]
     setTargets(next)
     setTargetDraft('')
     sendStyle(next, cursor)
   }
 
   function removeTarget(text: string) {
-    const next = targets.filter((target) => target !== text)
+    const next = targets.filter((target) => target.text !== text)
     setTargets(next)
     sendStyle(next, cursor)
   }
@@ -125,7 +136,15 @@ export function DeckPanel({
   function handleCursor(x: number, y: number) {
     const next = { x, y }
     setCursor(next)
-    sendStyleThrottled(next)
+    sendStyleThrottled(targets, next)
+  }
+
+  function handleTargetMove(id: string, x: number, y: number) {
+    const next = targets.map((target) =>
+      target.text === id ? { ...target, x, y } : target,
+    )
+    setTargets(next)
+    sendStyleThrottled(next, cursor)
   }
 
   const activeSummary = state.activeStyle
@@ -138,10 +157,11 @@ export function DeckPanel({
       })
     : ''
 
-  const padTargets = targetPositions(targets.length).map((position, index) => ({
-    id: targets[index],
-    label: targets[index],
-    ...position,
+  const padTargets = targets.map((target) => ({
+    id: target.text,
+    label: target.text,
+    x: target.x,
+    y: target.y,
   }))
 
   return (
@@ -185,15 +205,15 @@ export function DeckPanel({
 
       {targets.length > 0 && (
         <ul className="deck__targets">
-          {targets.map((text) => (
-            <li key={text}>
+          {targets.map((target) => (
+            <li key={target.text}>
               <button
                 className="deck__target-chip"
-                onClick={() => removeTarget(text)}
+                onClick={() => removeTarget(target.text)}
                 disabled={!operable}
-                aria-label={t('deck.style.removeTarget', { prompt: text })}
+                aria-label={t('deck.style.removeTarget', { prompt: target.text })}
               >
-                {text} ✕
+                {target.text} ✕
               </button>
             </li>
           ))}
@@ -204,8 +224,9 @@ export function DeckPanel({
         label={t('deck.style.pad')}
         targets={padTargets}
         cursor={cursor}
-        disabled={!operable || targets.length < 2}
+        disabled={!operable || targets.length === 0}
         onChange={handleCursor}
+        onTargetMove={handleTargetMove}
       />
 
       <div className="deck__prompt-row">

@@ -13,40 +13,76 @@ type XYPadProps = {
   cursor: { x: number; y: number }
   disabled?: boolean
   onChange: (x: number, y: number) => void
+  /** When provided, target dots are draggable. */
+  onTargetMove?: (id: string, x: number, y: number) => void
 }
 
 const KEYBOARD_STEP = 0.05
+
+type Drag = { kind: 'cursor' } | { kind: 'target'; id: string }
 
 function clamp01(value: number) {
   return Math.min(1, Math.max(0, value))
 }
 
-/** A 2D control surface: fixed labelled targets, one draggable cursor.
- * Pointer drags and arrow keys move the cursor; positions are normalized
- * 0..1 in both axes. */
-export function XYPad({ label, targets, cursor, disabled, onChange }: XYPadProps) {
+/** A 2D control surface: labelled targets and one cursor. Dragging the
+ * surface moves the cursor; dragging a dot repositions that target (so
+ * targets can be clustered). Arrow keys nudge the cursor. All positions are
+ * normalized 0..1 in both axes. */
+export function XYPad({
+  label,
+  targets,
+  cursor,
+  disabled,
+  onChange,
+  onTargetMove,
+}: XYPadProps) {
   const id = useId()
   const surfaceRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<Drag | null>(null)
 
-  function moveToPointer(event: PointerEvent<HTMLDivElement>) {
+  function pointerPosition(event: PointerEvent<HTMLDivElement>) {
     const rect = surfaceRef.current?.getBoundingClientRect()
-    if (!rect || rect.width === 0) return
-    onChange(
-      clamp01((event.clientX - rect.left) / rect.width),
-      clamp01((event.clientY - rect.top) / rect.height),
-    )
+    if (!rect || rect.width === 0) return null
+    return {
+      x: clamp01((event.clientX - rect.left) / rect.width),
+      y: clamp01((event.clientY - rect.top) / rect.height),
+    }
+  }
+
+  function applyDrag(event: PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current
+    const position = pointerPosition(event)
+    if (!drag || !position) return
+    if (drag.kind === 'target') {
+      onTargetMove?.(drag.id, position.x, position.y)
+    } else {
+      onChange(position.x, position.y)
+    }
   }
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (disabled) return
-    surfaceRef.current?.setPointerCapture(event.pointerId)
-    moveToPointer(event)
+    const grabbedTarget = (event.target as HTMLElement)
+      .closest?.('[data-target-id]')
+      ?.getAttribute('data-target-id')
+    dragRef.current =
+      grabbedTarget && onTargetMove
+        ? { kind: 'target', id: grabbedTarget }
+        : { kind: 'cursor' }
+    // jsdom has no pointer capture; in browsers it keeps the drag alive
+    // outside the surface.
+    surfaceRef.current?.setPointerCapture?.(event.pointerId)
+    applyDrag(event)
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
-    if (disabled) return
-    if (!surfaceRef.current?.hasPointerCapture(event.pointerId)) return
-    moveToPointer(event)
+    if (disabled || !dragRef.current) return
+    applyDrag(event)
+  }
+
+  function handlePointerEnd() {
+    dragRef.current = null
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -77,13 +113,16 @@ export function XYPad({ label, targets, cursor, disabled, onChange }: XYPadProps
         tabIndex={disabled ? -1 : 0}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerEnd}
+        onPointerCancel={handlePointerEnd}
         onKeyDown={handleKeyDown}
       >
         {targets.map((target) => (
           <span
             key={target.id}
-            className="ui-xypad__target"
+            className={`ui-xypad__target${onTargetMove ? ' ui-xypad__target--draggable' : ''}`}
             style={{ left: `${target.x * 100}%`, top: `${target.y * 100}%` }}
+            data-target-id={target.id}
           >
             <span className="ui-xypad__target-dot" />
             <span className="ui-xypad__target-label">{target.label}</span>

@@ -35,21 +35,25 @@ try {
   await deck.getByRole('button', { name: 'Play' }).click()
   await deck.getByRole('button', { name: 'Stop' }).waitFor({ timeout: 10_000 })
 
-  // Drag the cursor to each target in turn; three targets sit on a circle
-  // of radius 0.38 starting at 12 o'clock.
+  // Drag the cursor to each target dot in turn, wherever it spawned (the
+  // pad places new targets at the emptiest slot, not a fixed layout).
   const pad = deck.getByLabel('Style pad')
   const box = await pad.boundingBox()
   if (!box) throw new Error('style pad not visible')
   const at = (x, y) => [box.x + x * box.width, box.y + y * box.height]
-  const positions = TARGETS.map((_, index) => {
-    const angle = (2 * Math.PI * index) / TARGETS.length - Math.PI / 2
-    return { x: 0.5 + 0.38 * Math.cos(angle), y: 0.5 + 0.38 * Math.sin(angle) }
-  })
+  const dotCenter = async (label) => {
+    const dot = deck.locator('.ui-xypad__target', { hasText: label })
+    const dotBox = await dot.boundingBox()
+    if (!dotBox) throw new Error(`target dot for ${label} not visible`)
+    return [dotBox.x + dotBox.width / 2, dotBox.y + 5]
+  }
+  const positions = []
+  for (const target of TARGETS) positions.push(await dotCenter(target))
 
   await page.mouse.move(...at(0.5, 0.5))
   await page.mouse.down()
   for (const [index, position] of positions.entries()) {
-    await page.mouse.move(...at(position.x, position.y), { steps: 20 })
+    await page.mouse.move(position[0] + 2, position[1] + 2, { steps: 20 })
     await page.waitForTimeout(SECONDS_PER_LEG * 1000)
     const summary = await deck.locator('.deck__active-prompt').textContent()
     console.log(`glide leg ${index + 1}: ${summary}`)
@@ -62,6 +66,33 @@ try {
     }
   }
   await page.mouse.up()
+
+  // Cluster: drag the 'dub ambient' dot (right) next to 'dark minimal
+  // techno' (bottom), then park the cursor near the pair — the cluster must
+  // dominate the blend together.
+  await page.mouse.move(...(await dotCenter(TARGETS[2])))
+  await page.mouse.down()
+  await page.mouse.move(...at(0.56, 0.84), { steps: 10 })
+  await page.mouse.up()
+
+  await page.mouse.move(...at(0.4, 0.78))
+  await page.mouse.down()
+  await page.mouse.up()
+  await page.waitForTimeout(2_000)
+
+  const clusterSummary = await deck.locator('.deck__active-prompt').textContent()
+  console.log(`cluster: ${clusterSummary}`)
+  const percentages = Object.fromEntries(
+    (clusterSummary?.replace('Playing: ', '').split(' · ') ?? []).map((part) => {
+      const [pct, ...text] = part.split('% ')
+      return [text.join('% '), Number(pct)]
+    }),
+  )
+  const clusterShare =
+    (percentages[TARGETS[1]] ?? 0) + (percentages[TARGETS[2]] ?? 0)
+  if (clusterShare < 80) {
+    throw new Error(`clustered pair should dominate, got ${clusterShare}%`)
+  }
 
   const underruns = Number(
     await deck

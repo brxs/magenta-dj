@@ -148,6 +148,47 @@ describe('DeckPanel', () => {
     expect(style.prompts[0].weight).toBeGreaterThan(style.prompts[1].weight)
   })
 
+  it('drags a target dot under the cursor and resends its dominant weight', () => {
+    vi.useFakeTimers()
+    try {
+      const onSetStyle = vi.fn()
+      renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+      addTarget('funk')
+      addTarget('techno')
+      onSetStyle.mockClear()
+
+      const surface = screen.getByLabelText('Style pad')
+      vi.spyOn(surface, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 100,
+        right: 100,
+        bottom: 100,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      } as DOMRect)
+
+      // Grab the funk dot (12 o'clock) and drop it just beside the centred
+      // cursor — a cluster move.
+      fireEvent.pointerDown(screen.getByText('funk'), {
+        clientX: 50,
+        clientY: 12,
+        pointerId: 1,
+      })
+      fireEvent.pointerMove(surface, { clientX: 51, clientY: 50, pointerId: 1 })
+      fireEvent.pointerUp(surface, { pointerId: 1 })
+      vi.advanceTimersByTime(300) // flush the throttle's trailing send
+
+      const style = onSetStyle.mock.calls.at(-1)![0]
+      expect(style.prompts[0].text).toBe('funk')
+      expect(style.prompts[0].weight).toBeGreaterThan(0.9)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows the active blend summary', () => {
     renderPanel({
       connection: 'open',

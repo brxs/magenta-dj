@@ -164,6 +164,12 @@
   pointer-events: none;
 }
 
+.ui-xypad__target--draggable {
+  pointer-events: auto;
+  cursor: grab;
+  touch-action: none;
+}
+
 .ui-xypad__target-dot {
   width: var(--space-2);
   height: var(--space-2);
