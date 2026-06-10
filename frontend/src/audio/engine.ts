@@ -19,6 +19,10 @@ export type DeckChannel = {
   reset: () => void
   setVolume: (volume: number) => void
   setEq: (band: EqBand, value: number) => void
+  /** Post-fader RMS level, 0..~1 (for channel meters). */
+  getLevel: () => number
+  /** Min/max of the latest audio window, -1..1 (for waveform strips). */
+  getWaveformRange: () => [number, number]
   dispose: () => void
 }
 
@@ -36,6 +40,8 @@ export type AudioEngine = {
   ) => Promise<DeckChannel>
   resume: () => Promise<void>
   setCrossfade: (position: number) => void
+  /** Master-bus RMS level, 0..~1 (what the speakers get). */
+  getMasterLevel: () => number
   /** Start capturing the master bus (exactly the speaker feed). */
   startRecording: () => Promise<void>
   /** Stop capturing and return the session as a WAV blob. */
@@ -61,7 +67,20 @@ export function equalPowerGains(position: number): { a: number; b: number } {
 type Bus = {
   context: AudioContext
   master: GainNode
+  masterAnalyser: AnalyserNode
   crossfade: Record<DeckId, GainNode>
+}
+
+const ANALYSER_FFT_SIZE = 2048
+
+function rmsLevel(analyser: AnalyserNode, buffer: Uint8Array<ArrayBuffer>): number {
+  analyser.getByteTimeDomainData(buffer)
+  let sum = 0
+  for (let i = 0; i < buffer.length; i++) {
+    const sample = (buffer[i] - 128) / 128
+    sum += sample * sample
+  }
+  return Math.sqrt(sum / buffer.length)
 }
 
 type Recorder = {
@@ -73,6 +92,8 @@ export function createAudioEngine(): AudioEngine {
   let busPromise: Promise<Bus> | null = null
   let crossfadePosition = INITIAL_CROSSFADE
   let recorder: Recorder | null = null
+  let masterAnalyserRef: AnalyserNode | null = null
+  let masterBuffer: Uint8Array<ArrayBuffer> | null = null
 
   async function buildBus(): Promise<Bus> {
     const context = new AudioContext({ sampleRate: SAMPLE_RATE })
@@ -80,13 +101,18 @@ export function createAudioEngine(): AudioEngine {
       await context.audioWorklet.addModule('/player-worklet.js')
       const master = context.createGain()
       master.connect(context.destination)
+      const masterAnalyser = context.createAnalyser()
+      masterAnalyser.fftSize = ANALYSER_FFT_SIZE
+      master.connect(masterAnalyser)
+      masterAnalyserRef = masterAnalyser
+      masterBuffer = new Uint8Array(masterAnalyser.fftSize)
       const gains = equalPowerGains(crossfadePosition)
       const crossfade = { a: context.createGain(), b: context.createGain() }
       crossfade.a.gain.value = gains.a
       crossfade.b.gain.value = gains.b
       crossfade.a.connect(master)
       crossfade.b.connect(master)
-      return { context, master, crossfade }
+      return { context, master, masterAnalyser, crossfade }
     } catch (error) {
       void context.close()
       throw error
@@ -131,6 +157,11 @@ export function createAudioEngine(): AudioEngine {
       volume.gain.value = initial.volume
       head.connect(volume)
       volume.connect(bus.crossfade[deckId])
+      // Post-fader tap for the channel meter and waveform strip.
+      const analyser = bus.context.createAnalyser()
+      analyser.fftSize = ANALYSER_FFT_SIZE
+      volume.connect(analyser)
+      const analyserBuffer = new Uint8Array(analyser.fftSize)
       worklet.port.onmessage = (event) => onStats(event.data)
       return {
         postPcm(samples) {
@@ -153,11 +184,25 @@ export function createAudioEngine(): AudioEngine {
             PARAM_RAMP_SECONDS,
           )
         },
+        getLevel() {
+          return rmsLevel(analyser, analyserBuffer)
+        },
+        getWaveformRange() {
+          analyser.getByteTimeDomainData(analyserBuffer)
+          let lowest = 255
+          let highest = 0
+          for (let i = 0; i < analyserBuffer.length; i++) {
+            if (analyserBuffer[i] < lowest) lowest = analyserBuffer[i]
+            if (analyserBuffer[i] > highest) highest = analyserBuffer[i]
+          }
+          return [(lowest - 128) / 128, (highest - 128) / 128]
+        },
         dispose() {
           worklet.port.onmessage = null
           worklet.disconnect()
           for (const band of EQ_BANDS) eqNodes[band].disconnect()
           volume.disconnect()
+          analyser.disconnect()
         },
       }
     },
@@ -217,6 +262,11 @@ export function createAudioEngine(): AudioEngine {
         bus.master.disconnect(node)
       }
       return encodeWav(chunks, SAMPLE_RATE, 2)
+    },
+
+    getMasterLevel() {
+      if (!masterBuffer || !masterAnalyserRef) return 0
+      return rmsLevel(masterAnalyserRef, masterBuffer)
     },
 
     setCrossfade(position) {
