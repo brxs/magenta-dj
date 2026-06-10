@@ -57,6 +57,7 @@ export function startCueStream(
       } catch {
         return
       }
+      if (typeof parsed !== 'object' || parsed === null) return
       if ((parsed as { event?: unknown }).event !== 'ready') return
       ready = true
       engine

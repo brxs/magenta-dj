@@ -81,6 +81,7 @@ describe('startCueStream', () => {
     // A pre-ready error frame (or noise) must not start the capture.
     socket().onmessage?.({ data: JSON.stringify({ event: 'error' }) })
     socket().onmessage?.({ data: 'not json' })
+    socket().onmessage?.({ data: 'null' })
     expect(engine.startCueCapture).not.toHaveBeenCalled()
 
     socket().serverReady()
