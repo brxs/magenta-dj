@@ -354,6 +354,33 @@ it via the channel-cue button and mix knob, drop it with PLAY, kill
 deck A — cue LEDs mirroring state throughout. Unit tests cover every new
 mapping row; verified on the physical device against the checklist.
 
+## M11 — FLX4 phones jack: backend cue sink
+
+**Goal:** cue through the controller's own headphone jack — master on
+the FLX4's RCA, phones on its jack, one USB cable, no Bluetooth.
+Architecture in
+[ADR-0007](adr/0007-flx4-phones-jack-via-a-backend-cue-sink.md): the
+browser can't reach USB channels 3/4, but the backend can, and CoreAudio
+mixes both clients on one device.
+
+Scope:
+
+1. **Backend sink.** `sounddevice` output stream on a ≥4-channel device:
+   cue frames to channels 3/4, silence to 1/2; a drift-bounded FIFO
+   between the WebSocket and the audio callback; `GET /api/cue/outputs`
+   lists candidate devices; `/ws/cue` carries interleaved stereo float32
+   up from the browser (the recorder worklet's native format).
+2. **Frontend capture + stream.** A `pcm-recorder` instance taps the
+   cue feed (post-blend); a small client owns the WebSocket lifecycle.
+   The phones picker lists backend jacks alongside browser sinks and the
+   choice persists like any other device.
+
+**Exit criteria:** headphones in the FLX4's jack carry the cue while the
+room hears only the RCA master; blend/PFL behaviour identical to the
+browser-sink path; survives reload; pure parts (framing, FIFO, device
+filtering) unit-tested; verified on hardware via the M9/M10 checklist's
+M11 addendum.
+
 ## Later (not committed)
 
 Ideas parked deliberately — each would get its own ADR if picked up:
