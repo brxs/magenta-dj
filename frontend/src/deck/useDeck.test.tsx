@@ -111,13 +111,17 @@ describe('useDeck connection', () => {
   it('drops commands while the socket is not open', () => {
     const { result } = renderDeck(makeFakeEngine().engine)
 
-    act(() => result.current.setPrompt('too early'))
+    const style = { prompts: [{ text: 'warm disco funk', weight: 1 }] }
+    act(() => result.current.setStyle(style))
     expect(socket(0).sent).toHaveLength(0)
 
     act(() => socket(0).serverOpen())
-    act(() => result.current.setPrompt('warm disco funk'))
+    act(() => result.current.setStyle(style))
     expect(socket(0).sent).toEqual([
-      JSON.stringify({ type: 'set_prompt', prompt: 'warm disco funk' }),
+      JSON.stringify({
+        type: 'set_style',
+        prompts: [{ text: 'warm disco funk', weight: 1 }],
+      }),
     ])
   })
 

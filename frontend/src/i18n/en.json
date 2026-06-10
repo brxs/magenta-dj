@@ -18,11 +18,15 @@
       "died": "The deck engine crashed.",
       "restart": "Restart deck"
     },
-    "prompt": {
-      "label": "Style prompt",
-      "placeholder": "e.g. warm disco funk",
-      "apply": "Set prompt",
-      "active": "Playing: {{prompt}}"
+    "style": {
+      "target": "Style target",
+      "targetPlaceholder": "e.g. warm disco funk",
+      "addTarget": "Add",
+      "removeTarget": "Remove {{prompt}}",
+      "pad": "Style pad",
+      "active": "Playing: {{summary}}",
+      "blendItem": "{{percent}}% {{text}}",
+      "blendSeparator": " · "
     },
     "play": "Play",
     "stop": "Stop",

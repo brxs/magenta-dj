@@ -28,3 +28,4 @@ scaffolds the file from the template.
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | Accepted |
 | [0002](0002-browser-app-with-python-model-workers.md) | Browser app with Python model workers, deferring Tauri | Accepted |
 | [0003](0003-frontend-audio-mixing-via-web-audio.md) | Frontend audio mixing via Web Audio | Accepted |
+| [0004](0004-style-is-a-weighted-prompt-blend-tempo-is-not-a-parameter.md) | Style is a weighted prompt blend; tempo is not a parameter | Accepted |

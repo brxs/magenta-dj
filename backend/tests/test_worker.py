@@ -17,14 +17,14 @@ FAKE_PCM = b"\x00" * 64
 
 class FakeEngine:
     def __init__(self):
-        self.prompt = None
-        self.fail_set_prompt = False
+        self.styles = []
+        self.fail_set_style = False
         self.fail_generate = False
 
-    def set_prompt(self, prompt):
-        if self.fail_set_prompt:
+    def set_style(self, prompts):
+        if self.fail_set_style:
             raise RuntimeError("embed blew up")
-        self.prompt = prompt
+        self.styles.append(prompts)
 
     def generate_chunk(self):
         if self.fail_generate:
@@ -79,22 +79,38 @@ def test_play_emits_audio(deck):
     assert deck.next_event("chunk")["index"] == 0
 
 
-def test_set_prompt_applies_at_chunk_boundary(deck):
+def test_set_prompt_applies_as_single_prompt_style(deck):
     deck.send(type="set_prompt", prompt="warm disco funk")
-    applied = deck.next_event("prompt_applied")
-    assert applied["prompt"] == "warm disco funk"
-    assert deck.engine.prompt == "warm disco funk"
+    applied = deck.next_event("style_applied")
+    assert applied["prompts"] == [{"text": "warm disco funk", "weight": 1.0}]
+    assert deck.engine.styles[-1] == [("warm disco funk", 1.0)]
 
 
-def test_set_prompt_failure_keeps_worker_alive(deck):
-    deck.engine.fail_set_prompt = True
+def test_set_style_blends_many_prompts(deck):
+    prompts = [
+        {"text": "warm disco funk", "weight": 0.5},
+        {"text": "dark minimal techno", "weight": 0.3},
+        {"text": "dub reggae", "weight": 0.2},
+    ]
+    deck.send(type="set_style", prompts=prompts)
+    applied = deck.next_event("style_applied")
+    assert applied["prompts"] == prompts
+    assert deck.engine.styles[-1] == [
+        ("warm disco funk", 0.5),
+        ("dark minimal techno", 0.3),
+        ("dub reggae", 0.2),
+    ]
+
+
+def test_set_style_failure_keeps_worker_alive(deck):
+    deck.engine.fail_set_style = True
     deck.send(type="set_prompt", prompt="boom")
-    assert "set_prompt failed" in deck.next_event("error")["error"]
+    assert "set_style failed" in deck.next_event("error")["error"]
 
     # The deck must still take commands and play afterwards.
-    deck.engine.fail_set_prompt = False
+    deck.engine.fail_set_style = False
     deck.send(type="set_prompt", prompt="recovered")
-    assert deck.next_event("prompt_applied")["prompt"] == "recovered"
+    assert deck.next_event("style_applied")["prompts"][0]["text"] == "recovered"
     deck.send(type="play")
     assert deck.next_event("audio") == FAKE_PCM
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/Button'
@@ -7,12 +7,49 @@ import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
 import { Stat } from '../ui/Stat'
 import { TextField } from '../ui/TextField'
-import type { DeckState } from './deckState'
+import { XYPad } from '../ui/XYPad'
+import type { ActiveStyle, DeckState } from './deckState'
+import { padWeights, spawnPosition, type PadPoint } from './padWeights'
 import './deck.css'
 
 // The worker holds ~3s of lead (see backend worker pacing); the meter shows
 // health relative to that target.
 const BUFFER_TARGET_SECONDS = 3
+// Matches the backend's MAX_STYLE_PROMPTS.
+const MAX_TARGETS = 8
+// Cursor drags re-blend cached embeddings server-side; ~7/s is plenty when
+// styles land at chunk boundaries anyway.
+const STYLE_SEND_INTERVAL_MS = 150
+
+/** Leading+trailing throttle where an immediate send is the chokepoint:
+ * it cancels any pending trailing send, so a stale gesture frame queued
+ * before an add/remove can never overwrite it. */
+function createSendThrottle(intervalMs: number) {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let last = 0
+  function fire(send: () => void) {
+    clearTimeout(timer)
+    timer = undefined
+    last = Date.now()
+    send()
+  }
+  return {
+    immediate: fire,
+    throttled(send: () => void) {
+      const elapsed = Date.now() - last
+      if (elapsed >= intervalMs) {
+        fire(send)
+      } else {
+        // Trailing send so the gesture's resting place always lands.
+        clearTimeout(timer)
+        timer = setTimeout(() => fire(send), intervalMs - elapsed)
+      }
+    },
+    cancel() {
+      clearTimeout(timer)
+    },
+  }
+}
 
 type DeckPanelProps = {
   deckId: string
@@ -20,7 +57,7 @@ type DeckPanelProps = {
   volume: number
   onPlay: () => void
   onStop: () => void
-  onSetPrompt: (prompt: string) => void
+  onSetStyle: (style: ActiveStyle) => void
   onSetModel: (model: string) => void
   onRestart: () => void
   onSetVolume: (volume: number) => void
@@ -32,13 +69,16 @@ export function DeckPanel({
   volume,
   onPlay,
   onStop,
-  onSetPrompt,
+  onSetStyle,
   onSetModel,
   onRestart,
   onSetVolume,
 }: DeckPanelProps) {
   const { t } = useTranslation()
-  const [promptDraft, setPromptDraft] = useState('')
+  const [targets, setTargets] = useState<(PadPoint & { text: string })[]>([])
+  const [cursor, setCursor] = useState<PadPoint>({ x: 0.5, y: 0.5 })
+  const [targetDraft, setTargetDraft] = useState('')
+  const [throttle] = useState(() => createSendThrottle(STYLE_SEND_INTERVAL_MS))
 
   const connected = state.connection === 'open'
   const operable = connected && !state.switchingModel && !state.workerDied
@@ -53,10 +93,91 @@ export function DeckPanel({
   const bufferTone =
     !state.playing || bufferFraction >= 0.5 ? 'ok' : bufferFraction >= 0.25 ? 'warn' : 'danger'
 
-  function applyPrompt() {
-    const prompt = promptDraft.trim()
-    if (prompt) onSetPrompt(prompt)
+  type Target = PadPoint & { text: string }
+
+  function styleFor(nextTargets: Target[], nextCursor: PadPoint): ActiveStyle | null {
+    if (nextTargets.length === 0) return null
+    const weights = padWeights(nextTargets, nextCursor)
+    return {
+      prompts: nextTargets.map((target, index) => ({
+        text: target.text,
+        weight: weights[index],
+      })),
+    }
   }
+
+  function sendStyle(nextTargets: Target[], nextCursor: PadPoint) {
+    throttle.immediate(() => {
+      const style = styleFor(nextTargets, nextCursor)
+      if (style) onSetStyle(style)
+    })
+  }
+
+  function sendStyleThrottled(nextTargets: Target[], nextCursor: PadPoint) {
+    throttle.throttled(() => {
+      const style = styleFor(nextTargets, nextCursor)
+      if (style) onSetStyle(style)
+    })
+  }
+
+  useEffect(() => () => throttle.cancel(), [throttle])
+
+  function addTarget() {
+    const text = targetDraft.trim()
+    if (
+      !text ||
+      targets.some((target) => target.text === text) ||
+      targets.length >= MAX_TARGETS
+    ) {
+      return
+    }
+    const next = [...targets, { text, ...spawnPosition(targets) }]
+    setTargets(next)
+    setTargetDraft('')
+    sendStyle(next, cursor)
+  }
+
+  function removeTarget(text: string) {
+    const next = targets.filter((target) => target.text !== text)
+    setTargets(next)
+    sendStyle(next, cursor)
+  }
+
+  function handleCursor(x: number, y: number) {
+    const next = { x, y }
+    setCursor(next)
+    sendStyleThrottled(targets, next)
+  }
+
+  function handleTargetMove(id: string, x: number, y: number) {
+    const next = targets.map((target) =>
+      target.text === id ? { ...target, x, y } : target,
+    )
+    setTargets(next)
+    sendStyleThrottled(next, cursor)
+  }
+
+  const activeSummary = state.activeStyle
+    ? t('deck.style.active', {
+        summary: state.activeStyle.prompts
+          .filter((prompt) => prompt.weight >= 0.005)
+          .sort((a, b) => b.weight - a.weight)
+          .map((prompt) =>
+            t('deck.style.blendItem', {
+              percent: Math.round(prompt.weight * 100),
+              text: prompt.text,
+            }),
+          )
+          .join(t('deck.style.blendSeparator')),
+      })
+    : ''
+
+  const padTargets = targets.map((target) => ({
+    id: target.text,
+    label: target.text,
+    x: target.x,
+    y: target.y,
+  }))
 
   return (
     <section className="deck" aria-label={t('deck.title', { id: deckId })}>
@@ -81,21 +202,54 @@ export function DeckPanel({
 
       <div className="deck__prompt-row">
         <TextField
-          label={t('deck.prompt.label')}
-          placeholder={t('deck.prompt.placeholder')}
-          value={promptDraft}
-          onChange={(event) => setPromptDraft(event.target.value)}
+          label={t('deck.style.target')}
+          placeholder={t('deck.style.targetPlaceholder')}
+          value={targetDraft}
+          onChange={(event) => setTargetDraft(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') applyPrompt()
+            if (event.key === 'Enter') addTarget()
           }}
         />
-        <Button onClick={applyPrompt} disabled={!operable || !promptDraft.trim()}>
-          {t('deck.prompt.apply')}
+        <Button
+          onClick={addTarget}
+          disabled={
+            !operable ||
+            !targetDraft.trim() ||
+            targets.length >= MAX_TARGETS ||
+            targets.some((target) => target.text === targetDraft.trim())
+          }
+        >
+          {t('deck.style.addTarget')}
         </Button>
       </div>
-      <p className="deck__active-prompt">
-        {state.activePrompt ? t('deck.prompt.active', { prompt: state.activePrompt }) : ''}
-      </p>
+
+      {targets.length > 0 && (
+        <ul className="deck__targets">
+          {targets.map((target) => (
+            <li key={target.text}>
+              <button
+                className="deck__target-chip"
+                onClick={() => removeTarget(target.text)}
+                disabled={!operable}
+                aria-label={t('deck.style.removeTarget', { prompt: target.text })}
+              >
+                {target.text} ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <XYPad
+        label={t('deck.style.pad')}
+        targets={padTargets}
+        cursor={cursor}
+        disabled={!operable || targets.length === 0}
+        onChange={handleCursor}
+        onTargetMove={handleTargetMove}
+      />
+
+      <p className="deck__active-prompt">{activeSummary}</p>
 
       <div className="deck__transport">
         {state.playing ? (

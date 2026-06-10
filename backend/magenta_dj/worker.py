@@ -32,7 +32,7 @@ def run_deck_worker(
     out_queue.put(("status", {"event": "ready", "deck": deck_id, "model": model}))
 
     playing = False
-    prompt: str | None = None
+    style: dict | None = None
     chunk_index = 0
     # Pacing clock: seconds of audio emitted since play, vs. wall time since
     # play. Reset on every stop→play transition.
@@ -69,31 +69,37 @@ def run_deck_worker(
                     pace_seconds = 0.0
             elif kind == "stop":
                 playing = False
-            elif kind == "set_prompt":
+            elif kind in ("set_prompt", "set_style"):
                 started = time.monotonic()
+                if kind == "set_prompt":
+                    entries = [{"text": cmd["prompt"], "weight": 1.0}]
+                else:
+                    entries = cmd["prompts"]
                 try:
-                    engine.set_prompt(cmd["prompt"])
+                    engine.set_style(
+                        [(entry["text"], entry["weight"]) for entry in entries]
+                    )
                 except Exception:
                     # The deck must survive a bad prompt; the controller
                     # validates shape, but embedding can still fail.
-                    logger.exception("deck %s: set_prompt failed", deck_id)
+                    logger.exception("deck %s: set_style failed", deck_id)
                     out_queue.put(
                         (
                             "status",
                             {
                                 "event": "error",
-                                "error": "set_prompt failed; prompt unchanged",
+                                "error": "set_style failed; style unchanged",
                             },
                         )
                     )
                 else:
-                    prompt = cmd["prompt"]
+                    style = {"prompts": entries}
                     out_queue.put(
                         (
                             "status",
                             {
-                                "event": "prompt_applied",
-                                "prompt": prompt,
+                                "event": "style_applied",
+                                **style,
                                 "effective_from_chunk": chunk_index,
                                 "embed_seconds": round(time.monotonic() - started, 3),
                             },
@@ -122,7 +128,7 @@ def run_deck_worker(
                     "event": "chunk",
                     "index": chunk_index,
                     "rtf": round(1.0 / elapsed, 2) if elapsed > 0 else None,
-                    "prompt": prompt,
+                    "style": style,
                 },
             )
         )

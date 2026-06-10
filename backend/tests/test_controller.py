@@ -270,6 +270,28 @@ def test_stale_audio_is_drained_on_connect(client, deck):
         ({"type": "set_prompt", "prompt": "x"}, True),
         ({"type": "set_prompt", "prompt": ""}, False),
         ({"type": "set_prompt", "prompt": None}, False),
+        ({"type": "set_style", "prompts": [{"text": "funk"}]}, True),
+        (
+            {
+                "type": "set_style",
+                "prompts": [
+                    {"text": "funk", "weight": 0.5},
+                    {"text": "techno", "weight": 0.3},
+                    {"text": "dub", "weight": 0.2},
+                ],
+            },
+            True,
+        ),
+        ({"type": "set_style", "prompts": []}, False),
+        ({"type": "set_style", "prompts": [{"text": "x"}] * 9}, False),
+        ({"type": "set_style", "prompts": [{"text": ""}]}, False),
+        ({"type": "set_style", "prompts": ["funk"]}, False),
+        ({"type": "set_style", "prompts": [{"text": "funk", "weight": -1}]}, False),
+        ({"type": "set_style", "prompts": [{"text": "funk", "weight": 0}]}, False),
+        (
+            {"type": "set_style", "prompts": [{"text": "funk", "weight": "heavy"}]},
+            False,
+        ),
         ({"type": "set_model", "model": "mrt2_base"}, True),
         ({"type": "set_model", "model": "mrt2_small"}, True),
         ({"type": "set_model", "model": "gpt-5"}, False),
