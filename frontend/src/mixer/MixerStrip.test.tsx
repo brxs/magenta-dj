@@ -7,6 +7,13 @@ import { createControlBus, type ControlBus } from '../control/bus'
 import { ControlBusProvider } from '../control/ControlBusProvider'
 import { MixerStrip, type ChannelControls } from './MixerStrip'
 
+vi.mock('../audio/outputs', () => ({
+  listAudioOutputs: vi.fn(async () => [
+    { deviceId: 'flx4', label: 'DDJ-FLX4' },
+    { deviceId: 'mac', label: 'MacBook Pro Speakers' },
+  ]),
+}))
+
 function makeEngine(overrides: Partial<AudioEngine> = {}): AudioEngine {
   return {
     createDeckChannel: vi.fn(),
@@ -25,22 +32,36 @@ function makeChannel(overrides: Partial<ChannelControls> = {}): ChannelControls 
   return {
     volume: 0.8,
     eq: { low: 0.5, mid: 0.5, high: 0.5 },
+    cue: false,
     onSetVolume: vi.fn(),
     onSetEqBand: vi.fn(),
+    onSetCue: vi.fn(),
     getLevel: () => 0,
     ...overrides,
   }
 }
 
-function renderMixer(
-  engine: AudioEngine,
-  channels: Record<'a' | 'b', ChannelControls> = { a: makeChannel(), b: makeChannel() },
-  bus: ControlBus = createControlBus(),
-) {
+type MixerOverrides = {
+  channels?: Record<'a' | 'b', ChannelControls>
+  bus?: ControlBus
+  cueDevice?: { deviceId: string; label: string } | null
+  onCueMixChange?: (position: number) => void
+  onCueDeviceChange?: (device: { deviceId: string; label: string } | null) => Promise<void>
+}
+
+function renderMixer(engine: AudioEngine, overrides: MixerOverrides = {}) {
   return render(
     <AudioEngineProvider engine={engine}>
-      <ControlBusProvider bus={bus}>
-        <MixerStrip channels={channels} crossfade={0.5} onCrossfadeChange={() => {}} />
+      <ControlBusProvider bus={overrides.bus ?? createControlBus()}>
+        <MixerStrip
+          channels={overrides.channels ?? { a: makeChannel(), b: makeChannel() }}
+          crossfade={0.5}
+          onCrossfadeChange={() => {}}
+          cueMix={0.5}
+          onCueMixChange={overrides.onCueMixChange ?? (() => {})}
+          cueDevice={overrides.cueDevice ?? null}
+          onCueDeviceChange={overrides.onCueDeviceChange ?? (async () => {})}
+        />
       </ControlBusProvider>
     </AudioEngineProvider>,
   )
@@ -50,7 +71,7 @@ describe('MixerStrip channels', () => {
   it('routes EQ knob and fader moves to the right channel', () => {
     const a = makeChannel()
     const b = makeChannel()
-    renderMixer(makeEngine(), { a, b })
+    renderMixer(makeEngine(), { channels: { a, b } })
 
     fireEvent.change(screen.getAllByLabelText('EQ Low')[0], { target: { value: '0' } })
     expect(a.onSetEqBand).toHaveBeenCalledWith('low', 0)
@@ -104,12 +125,83 @@ describe('MixerStrip recording', () => {
   it('toggles recording from the control bus', async () => {
     const engine = makeEngine()
     const bus = createControlBus()
-    renderMixer(engine, undefined, bus)
+    renderMixer(engine, { bus })
 
     act(() => bus.publish({ kind: 'record_toggle' }))
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Stop recording' })).toBeVisible(),
     )
     expect(engine.startRecording).toHaveBeenCalled()
+  })
+})
+
+describe('MixerStrip headphone cue', () => {
+  it('routes CUE toggles to the right channel and shows the lit state', () => {
+    const a = makeChannel({ cue: true })
+    const b = makeChannel()
+    renderMixer(makeEngine(), { channels: { a, b } })
+
+    const cueButtons = screen.getAllByRole('button', { name: 'Cue' })
+    expect(cueButtons[0]).toHaveAttribute('aria-pressed', 'true')
+    expect(cueButtons[1]).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(cueButtons[0])
+    expect(a.onSetCue).toHaveBeenCalledWith(false)
+    fireEvent.click(cueButtons[1])
+    expect(b.onSetCue).toHaveBeenCalledWith(true)
+  })
+
+  it('reports cue-mix knob moves', () => {
+    const onCueMixChange = vi.fn()
+    renderMixer(makeEngine(), { onCueMixChange })
+    fireEvent.change(screen.getByLabelText('Cue mix'), { target: { value: '0.2' } })
+    expect(onCueMixChange).toHaveBeenCalledWith(0.2)
+  })
+
+  it('scans for outputs and hands the picked device up', async () => {
+    const onCueDeviceChange = vi.fn(async () => {})
+    renderMixer(makeEngine(), { onCueDeviceChange })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Find devices' }))
+    const select = screen.getByLabelText('Phones out')
+    await waitFor(() =>
+      expect(select).toContainHTML('DDJ-FLX4'),
+    )
+
+    fireEvent.change(select, { target: { value: 'DDJ-FLX4' } })
+    expect(onCueDeviceChange).toHaveBeenCalledWith({
+      deviceId: 'flx4',
+      label: 'DDJ-FLX4',
+    })
+  })
+
+  it('keeps the saved device pickable without a scan, and can switch off', () => {
+    const onCueDeviceChange = vi.fn(async () => {})
+    renderMixer(makeEngine(), {
+      cueDevice: { deviceId: 'flx4', label: 'DDJ-FLX4' },
+      onCueDeviceChange,
+    })
+
+    const select = screen.getByLabelText('Phones out')
+    expect(select).toHaveValue('DDJ-FLX4')
+    fireEvent.change(select, { target: { value: 'Off' } })
+    expect(onCueDeviceChange).toHaveBeenCalledWith(null)
+  })
+
+  it('surfaces a failing cue output instead of swallowing it', async () => {
+    const onCueDeviceChange = vi.fn(async () => {
+      throw new Error('sink gone')
+    })
+    renderMixer(makeEngine(), {
+      cueDevice: { deviceId: 'flx4', label: 'DDJ-FLX4' },
+      onCueDeviceChange,
+    })
+
+    fireEvent.change(screen.getByLabelText('Phones out'), {
+      target: { value: 'DDJ-FLX4' },
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('sink gone'),
+    )
   })
 })

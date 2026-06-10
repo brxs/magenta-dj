@@ -10,7 +10,7 @@ import { AudioEngineProvider } from './audio/AudioEngineProvider'
 import type { AudioEngine } from './audio/engine'
 import { createControlBus, type ControlBus } from './control/bus'
 import { ControlBusProvider } from './control/ControlBusProvider'
-import { loadAppSettings } from './persistence'
+import { loadAppSettings, updateAppSettings } from './persistence'
 
 class FakeWebSocket {
   static CONNECTING = 0
@@ -68,6 +68,26 @@ describe('App crossfade ownership', () => {
 
     expect(engine.setCrossfade).toHaveBeenCalledWith(0.2)
     expect(loadAppSettings().crossfade).toBe(0.2)
+  })
+
+  it('a cue-mix move drives the engine and persists', () => {
+    const engine = makeEngine()
+    renderApp(engine)
+
+    fireEvent.change(screen.getByLabelText('Cue mix'), {
+      target: { value: '0.3' },
+    })
+
+    expect(engine.setCueMix).toHaveBeenLastCalledWith(0.3)
+    expect(loadAppSettings().cueMix).toBe(0.3)
+  })
+
+  it('restores the persisted cue device into the engine on load', () => {
+    updateAppSettings({ cueDevice: { deviceId: 'flx4', label: 'DDJ-FLX4' } })
+    const engine = makeEngine()
+    renderApp(engine)
+    expect(engine.setCueDevice).toHaveBeenCalledWith('flx4')
+    expect(screen.getByLabelText('Phones out')).toHaveValue('DDJ-FLX4')
   })
 
   it('a hardware crossfade intent flows through the same chain', () => {

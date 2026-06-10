@@ -30,6 +30,12 @@
   background: var(--color-accent-strong);
 }
 
+/* Toggle buttons in their active state: lit like a hardware cue LED. */
+.ui-button--lit {
+  color: var(--color-led-warn);
+  border-color: var(--color-led-warn);
+}
+
 /* ---------- transport ---------- */
 
 .ui-transport {

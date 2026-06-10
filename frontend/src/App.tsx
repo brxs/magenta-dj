@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { INITIAL_CROSSFADE, type DeckId } from './audio/engine'
+import { INITIAL_CROSSFADE, INITIAL_CUE_MIX, type DeckId } from './audio/engine'
 import { useAudioEngine } from './audio/engineContext'
+import type { AudioOutputDevice } from './audio/outputs'
 import { applyAppIntent } from './control/appIntents'
 import { useControlBus } from './control/busContext'
 import { MidiControls } from './control/MidiControls'
@@ -22,12 +23,21 @@ function App() {
   const [crossfade, setCrossfade] = useState(
     () => loadAppSettings().crossfade ?? INITIAL_CROSSFADE,
   )
+  const [cueMix, setCueMix] = useState(
+    () => loadAppSettings().cueMix ?? INITIAL_CUE_MIX,
+  )
+  const [cueDevice, setCueDevice] = useState<AudioOutputDevice | null>(
+    () => loadAppSettings().cueDevice ?? null,
+  )
 
-  // Hand the restored crossfade to the engine once — it holds the position
-  // until the bus is built on first play. Later moves go through
-  // handleCrossfade, so this deliberately ignores `crossfade` updates.
+  // Hand the restored mix positions and cue device to the engine once —
+  // it holds them until the bus is built on first play. Later moves go
+  // through the handlers, so this deliberately ignores state updates.
+  // A vanished cue device fails silently here; re-picking recovers.
   useEffect(() => {
     engine.setCrossfade(crossfade)
+    engine.setCueMix(cueMix)
+    if (cueDevice) void engine.setCueDevice(cueDevice.deviceId).catch(() => {})
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine])
 
@@ -43,6 +53,25 @@ function App() {
       engine.setCrossfade(position)
       setCrossfade(position)
       updateAppSettings({ crossfade: position })
+    },
+    [engine],
+  )
+
+  // The one place a cue-mix move is defined, mirroring handleCrossfade.
+  const handleCueMix = useCallback(
+    (position: number) => {
+      engine.setCueMix(position)
+      setCueMix(position)
+      updateAppSettings({ cueMix: position })
+    },
+    [engine],
+  )
+
+  const handleCueDevice = useCallback(
+    async (device: AudioOutputDevice | null) => {
+      setCueDevice(device)
+      updateAppSettings({ cueDevice: device })
+      await engine.setCueDevice(device?.deviceId ?? null)
     },
     [engine],
   )
@@ -94,15 +123,19 @@ function App() {
     a: {
       volume: deckA.volume,
       eq: deckA.eq,
+      cue: deckA.cue,
       onSetVolume: deckA.setVolume,
       onSetEqBand: deckA.setEqBand,
+      onSetCue: deckA.setCue,
       getLevel: deckA.getChannelLevel,
     },
     b: {
       volume: deckB.volume,
       eq: deckB.eq,
+      cue: deckB.cue,
       onSetVolume: deckB.setVolume,
       onSetEqBand: deckB.setEqBand,
+      onSetCue: deckB.setCue,
       getLevel: deckB.getChannelLevel,
     },
   }
@@ -140,6 +173,10 @@ function App() {
           channels={channels}
           crossfade={crossfade}
           onCrossfadeChange={handleCrossfade}
+          cueMix={cueMix}
+          onCueMixChange={handleCueMix}
+          cueDevice={cueDevice}
+          onCueDeviceChange={handleCueDevice}
         />
         <DeckColumn
           deckId="b"

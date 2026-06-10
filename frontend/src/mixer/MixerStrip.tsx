@@ -4,10 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { EQ_BANDS, type EqBand } from '../audio/eq'
 import type { DeckId } from '../audio/engine'
 import { useAudioEngine } from '../audio/engineContext'
+import { listAudioOutputs, type AudioOutputDevice } from '../audio/outputs'
 import { useControlBus } from '../control/busContext'
 import { Button } from '../ui/Button'
 import { Knob } from '../ui/Knob'
 import { LevelMeter } from '../ui/LevelMeter'
+import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
 import { VerticalFader } from '../ui/VerticalFader'
 import './mixer.css'
@@ -15,8 +17,10 @@ import './mixer.css'
 export type ChannelControls = {
   volume: number
   eq: Record<EqBand, number>
+  cue: boolean
   onSetVolume: (value: number) => void
   onSetEqBand: (band: EqBand, value: number) => void
+  onSetCue: (on: boolean) => void
   getLevel: () => number
 }
 
@@ -24,6 +28,11 @@ type MixerStripProps = {
   channels: Record<DeckId, ChannelControls>
   crossfade: number
   onCrossfadeChange: (position: number) => void
+  cueMix: number
+  onCueMixChange: (position: number) => void
+  cueDevice: AudioOutputDevice | null
+  /** Rejects when the device can't take the feed (e.g. unplugged). */
+  onCueDeviceChange: (device: AudioOutputDevice | null) => Promise<void>
 }
 
 function downloadWav(blob: Blob) {
@@ -45,13 +54,44 @@ function formatElapsed(totalSeconds: number) {
 /** The centre mixer strip: per-channel EQ knob columns, level meters, and
  * vertical faders, with the crossfader and master/record section below.
  * Channel state lives in each deck's hook; the strip only renders it. */
-export function MixerStrip({ channels, crossfade, onCrossfadeChange }: MixerStripProps) {
+export function MixerStrip({
+  channels,
+  crossfade,
+  onCrossfadeChange,
+  cueMix,
+  onCueMixChange,
+  cueDevice,
+  onCueDeviceChange,
+}: MixerStripProps) {
   const { t } = useTranslation()
   const engine = useAudioEngine()
   const [recording, setRecording] = useState(false)
   const [busy, setBusy] = useState(false)
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // null = not scanned yet; the saved device still shows as an option.
+  const [cueOutputs, setCueOutputs] = useState<AudioOutputDevice[] | null>(null)
+  const [phonesError, setPhonesError] = useState<string | null>(null)
+
+  async function scanCueOutputs() {
+    try {
+      setCueOutputs(await listAudioOutputs())
+      setPhonesError(null)
+    } catch (cause) {
+      setPhonesError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+
+  function pickCueDevice(label: string) {
+    const device =
+      cueOutputs?.find((output) => output.label === label) ??
+      (cueDevice?.label === label ? cueDevice : null)
+    onCueDeviceChange(device).then(
+      () => setPhonesError(null),
+      (cause: unknown) =>
+        setPhonesError(cause instanceof Error ? cause.message : String(cause)),
+    )
+  }
 
   useEffect(() => {
     if (!recording) return
@@ -125,6 +165,13 @@ export function MixerStrip({ channels, crossfade, onCrossfadeChange }: MixerStri
                 onChange={channels[deckId].onSetVolume}
               />
             </div>
+            <Button
+              lit={channels[deckId].cue}
+              aria-pressed={channels[deckId].cue}
+              onClick={() => channels[deckId].onSetCue(!channels[deckId].cue)}
+            >
+              {t('mixer.cue')}
+            </Button>
           </div>
         ))}
       </div>
@@ -143,6 +190,37 @@ export function MixerStrip({ channels, crossfade, onCrossfadeChange }: MixerStri
           />
         </div>
         <span className="mixer__edge">{t('mixer.deckB')}</span>
+      </div>
+
+      <div className="mixer__phones" role="group" aria-label={t('mixer.phones')}>
+        <Knob
+          label={t('mixer.cueMix')}
+          accent="master"
+          value={cueMix}
+          onChange={onCueMixChange}
+        />
+        <div className="mixer__phones-device">
+          <Select
+            label={t('mixer.phonesOutput')}
+            value={cueDevice?.label ?? t('mixer.phonesOff')}
+            options={[
+              t('mixer.phonesOff'),
+              ...(cueOutputs?.map((output) => output.label) ??
+                (cueDevice ? [cueDevice.label] : [])),
+            ]}
+            onChange={pickCueDevice}
+          />
+          {!cueOutputs && (
+            <Button onClick={() => void scanCueOutputs()}>
+              {t('mixer.phonesScan')}
+            </Button>
+          )}
+          {phonesError && (
+            <span className="mixer__error" role="alert">
+              {t('mixer.phonesError', { message: phonesError })}
+            </span>
+          )}
+        </div>
       </div>
 
       <div className="mixer__master">
