@@ -16,14 +16,22 @@ type KnobProps = {
 
 const SIZE = 44
 const RADIUS = 17
+const POINTER_RADIUS = 10
 const SWEEP_DEGREES = 270
-const START_DEGREES = -225 // 7-o'clock start, 270° clockwise sweep
+// Min points to 7 o'clock and the dial sweeps clockwise over the top to
+// 5 o'clock, leaving the conventional gap at the bottom. Angles are
+// y-up math convention, so clockwise on screen = decreasing angle.
+const START_DEGREES = -135
 
-function polar(angleDegrees: number) {
+function angleFor(fraction: number) {
+  return START_DEGREES - SWEEP_DEGREES * fraction
+}
+
+function polar(angleDegrees: number, radius = RADIUS) {
   const radians = (angleDegrees * Math.PI) / 180
   return {
-    x: SIZE / 2 + RADIUS * Math.cos(radians),
-    y: SIZE / 2 - RADIUS * Math.sin(radians),
+    x: SIZE / 2 + radius * Math.cos(radians),
+    y: SIZE / 2 - radius * Math.sin(radians),
   }
 }
 
@@ -49,14 +57,14 @@ export function Knob({
 }: KnobProps) {
   const id = useId()
   const fraction = (value - min) / (max - min)
-  const valueAngle = START_DEGREES + SWEEP_DEGREES * fraction
-  const pointer = polar(valueAngle)
+  const valueAngle = angleFor(fraction)
+  const pointer = polar(valueAngle, POINTER_RADIUS)
 
   return (
     <div className={`ui-knob ui-knob--${accent}${disabled ? ' ui-knob--disabled' : ''}`}>
       <div className="ui-knob__dial">
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true">
-          <path className="ui-knob__track" d={arcPath(START_DEGREES, START_DEGREES + SWEEP_DEGREES)} />
+          <path className="ui-knob__track" d={arcPath(START_DEGREES, angleFor(1))} />
           <path className="ui-knob__value" d={arcPath(START_DEGREES, valueAngle)} />
           <circle className="ui-knob__cap" cx={SIZE / 2} cy={SIZE / 2} r={RADIUS - 5} />
           <line
