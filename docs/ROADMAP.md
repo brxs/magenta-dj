@@ -389,6 +389,15 @@ M11 addendum.
 
 ## M12 — Color FX: one-knob effects per deck
 
+**Status: 🔶 built (2026-06-10), pending hardware verification.** The
+canonical six shipped over pure curves (ADR-0008) at the pre-fader
+insert, with the branch-pair bypass making "off" bit-exact; UI selector
++ knob per deck, persisted; SMART CFX remapped to the effect amount
+with the style sweep on SHIFT + knob (soft-shift, tracked from the
+press/release notes). Verification is
+[`m12-hardware-checklist.md`](m12-hardware-checklist.md) — including
+the monitor check that shifted CFX keeps its CC.
+
 **Goal:** sound-shape the running streams like a DJ mixer — per-deck
 effects on the model of Pioneer's Sound Color FX: one knob per channel,
 centre off, the turn shaping both wet amount and character. The SMART

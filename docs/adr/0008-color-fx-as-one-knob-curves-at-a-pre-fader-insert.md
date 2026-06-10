@@ -1,6 +1,6 @@
 # 0008. Color FX as one-knob curves at a pre-fader insert
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-10
 - **Deciders:** Daniel Peter
 
