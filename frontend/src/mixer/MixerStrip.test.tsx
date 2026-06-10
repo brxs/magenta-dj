@@ -1,4 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { AudioEngineProvider } from '../audio/AudioEngineProvider'
@@ -75,6 +82,15 @@ function renderMixer(engine: AudioEngine, overrides: MixerOverrides = {}) {
 }
 
 describe('MixerStrip channels', () => {
+  it('stacks the EQ knobs hardware-style: Hi on top, Low at the bottom', () => {
+    renderMixer(makeEngine())
+    const channel = screen.getByRole('group', { name: 'Channel a' })
+    const labels = within(channel)
+      .getAllByText(/^EQ (Hi|Mid|Low)$/)
+      .map((node) => node.textContent)
+    expect(labels).toEqual(['EQ Hi', 'EQ Mid', 'EQ Low'])
+  })
+
   it('routes EQ knob and fader moves to the right channel', () => {
     const a = makeChannel()
     const b = makeChannel()

@@ -147,6 +147,9 @@ export function MixerStrip({
   )
 
   const deckIds: DeckId[] = ['a', 'b']
+  // Hardware mixers stack HI on top; EQ_BANDS stays low→high for the
+  // audio chain, this is display order only.
+  const eqDisplayOrder: EqBand[] = [...EQ_BANDS].reverse()
 
   return (
     <section className="mixer" aria-label={t('mixer.title')}>
@@ -158,7 +161,7 @@ export function MixerStrip({
             role="group"
             aria-label={t('mixer.channel', { id: deckId })}
           >
-            {EQ_BANDS.map((band) => (
+            {eqDisplayOrder.map((band) => (
               <Knob
                 key={band}
                 label={t(`deck.eq.${band}`)}
