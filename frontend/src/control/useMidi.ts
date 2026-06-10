@@ -27,7 +27,7 @@ export function useMidi() {
   )
   const [deviceName, setDeviceName] = useState<string | null>(null)
 
-  const [{ connect, readMonitor, setPadLeds }] = useState(() => {
+  const [{ connect, readMonitor, setLed, setPadLeds }] = useState(() => {
     let entries: MidiMonitorEntry[] = []
     let nextEntryId = 0
     const translate = createFlx4Translator()
@@ -46,19 +46,23 @@ export function useMidi() {
         setDeviceName(nextDeviceName)
       },
     })
+    /** Pioneer buttons/pads light by echoing their own status/note back
+     * as MIDI out, velocity 0x7F on / 0x00 off (docs/midi-ddj-flx4.md). */
+    const setLed = (status: number, note: number, on: boolean) => {
+      link.send([status, note, on ? 0x7f : 0x00])
+    }
     return {
       connect: () => void link.connect(),
       readMonitor: () => entries,
-      /** Light pads 1–count for a deck's style targets: Pioneer pads echo
-       * their own status/note back as MIDI out, velocity 0x7F on / 0x00
-       * off (docs/midi-ddj-flx4.md). */
+      setLed,
+      /** Light pads 1–count for a deck's style targets. */
       setPadLeds: (deck: DeckId, count: number) => {
         for (let pad = 0; pad < PAD_COUNT; pad++) {
-          link.send([PAD_STATUS_BY_DECK[deck], pad, pad < count ? 0x7f : 0x00])
+          setLed(PAD_STATUS_BY_DECK[deck], pad, pad < count)
         }
       },
     }
   })
 
-  return { status, deviceName, connect, readMonitor, setPadLeds }
+  return { status, deviceName, connect, readMonitor, setLed, setPadLeds }
 }

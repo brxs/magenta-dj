@@ -6,6 +6,11 @@ import { useAudioEngine } from './audio/engineContext'
 import type { AudioOutputDevice } from './audio/outputs'
 import { applyAppIntent } from './control/appIntents'
 import { useControlBus } from './control/busContext'
+import {
+  CHANNEL_CUE_NOTE,
+  NOTE_ON_STATUS_BY_DECK,
+  TRANSPORT_CUE_NOTE,
+} from './control/flx4'
 import { MidiControls } from './control/MidiControls'
 import { useMidi } from './control/useMidi'
 import { DeckColumn } from './deck/DeckColumn'
@@ -82,12 +87,16 @@ function App() {
   const bus = useControlBus()
   useEffect(() =>
     bus.subscribe((intent) =>
-      applyAppIntent(intent, { a: deckA, b: deckB }, handleCrossfade),
+      applyAppIntent(
+        intent,
+        { a: deckA, b: deckB },
+        { onCrossfade: handleCrossfade, onCueMix: handleCueMix },
+      ),
     ),
   )
 
   const midi = useMidi()
-  const { status: midiStatus, setPadLeds } = midi
+  const { status: midiStatus, setLed, setPadLeds } = midi
   const [padCounts, setPadCounts] = useState<Record<DeckId, number>>({
     a: 0,
     b: 0,
@@ -113,6 +122,23 @@ function App() {
     setPadLeds('a', padCounts.a)
     setPadLeds('b', padCounts.b)
   }, [midiStatus, setPadLeds, padCounts])
+
+  // Cue LEDs (M10): channel CUE mirrors the headphone-cue toggles,
+  // transport CUE lights while a deck is primed off air.
+  useEffect(() => {
+    if (midiStatus !== 'connected') return
+    setLed(NOTE_ON_STATUS_BY_DECK.a, CHANNEL_CUE_NOTE, deckA.cue)
+    setLed(NOTE_ON_STATUS_BY_DECK.b, CHANNEL_CUE_NOTE, deckB.cue)
+    setLed(NOTE_ON_STATUS_BY_DECK.a, TRANSPORT_CUE_NOTE, deckA.primed)
+    setLed(NOTE_ON_STATUS_BY_DECK.b, TRANSPORT_CUE_NOTE, deckB.primed)
+  }, [
+    midiStatus,
+    setLed,
+    deckA.cue,
+    deckB.cue,
+    deckA.primed,
+    deckB.primed,
+  ])
 
   const ramWarning = combinedRamWarning(
     { a: deckA.state.model, b: deckB.state.model },

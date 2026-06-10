@@ -90,6 +90,17 @@ describe('App crossfade ownership', () => {
     expect(screen.getByLabelText('Phones out')).toHaveValue('DDJ-FLX4')
   })
 
+  it('a hardware cue-mix intent flows through the same chain', () => {
+    const engine = makeEngine()
+    const bus = createControlBus()
+    renderApp(engine, bus)
+
+    act(() => bus.publish({ kind: 'cue_mix', value: 0.8 }))
+
+    expect(engine.setCueMix).toHaveBeenLastCalledWith(0.8)
+    expect(loadAppSettings().cueMix).toBe(0.8)
+  })
+
   it('a hardware crossfade intent flows through the same chain', () => {
     const engine = makeEngine()
     const bus = createControlBus()

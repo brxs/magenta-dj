@@ -13,6 +13,9 @@ export type ControlIntent =
   | { kind: 'style_target'; deck: DeckId; index: number }
   | { kind: 'style_sweep'; deck: DeckId; value: number }
   | { kind: 'record_toggle' }
+  | { kind: 'cue_toggle'; deck: DeckId }
+  | { kind: 'cue_mix'; value: number }
+  | { kind: 'deck_prep'; deck: DeckId }
 
 export type ControlBus = {
   publish: (intent: ControlIntent) => void

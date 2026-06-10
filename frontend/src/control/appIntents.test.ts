@@ -29,12 +29,12 @@ function decks(a = fakeDeck(), b = fakeDeck()) {
   return { a, b }
 }
 
-const noCrossfade = () => {}
+const noHandlers = { onCrossfade: () => {}, onCueMix: () => {} }
 
 describe('applyAppIntent', () => {
   it('starts a stopped deck on play_toggle', () => {
     const a = fakeDeck({ playing: false })
-    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(a), noCrossfade)
+    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(a), noHandlers)
     expect(a.play).toHaveBeenCalled()
     expect(a.stop).not.toHaveBeenCalled()
   })
@@ -44,7 +44,7 @@ describe('applyAppIntent', () => {
     applyAppIntent(
       { kind: 'play_toggle', deck: 'b' },
       decks(fakeDeck(), b),
-      noCrossfade,
+      noHandlers,
     )
     expect(b.stop).toHaveBeenCalled()
     expect(b.play).not.toHaveBeenCalled()
@@ -56,7 +56,7 @@ describe('applyAppIntent', () => {
     ['crashed', { workerDied: true }],
   ])('refuses play_toggle while the deck is %s', (_label, state) => {
     const a = fakeDeck(state)
-    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(a), noCrossfade)
+    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(a), noHandlers)
     expect(a.play).not.toHaveBeenCalled()
     expect(a.stop).not.toHaveBeenCalled()
   })
@@ -64,7 +64,7 @@ describe('applyAppIntent', () => {
   it('routes volume to the addressed deck only', () => {
     const a = fakeDeck()
     const b = fakeDeck()
-    applyAppIntent({ kind: 'volume', deck: 'b', value: 0.3 }, decks(a, b), noCrossfade)
+    applyAppIntent({ kind: 'volume', deck: 'b', value: 0.3 }, decks(a, b), noHandlers)
     expect(b.setVolume).toHaveBeenCalledWith(0.3)
     expect(a.setVolume).not.toHaveBeenCalled()
   })
@@ -74,26 +74,69 @@ describe('applyAppIntent', () => {
     applyAppIntent(
       { kind: 'eq', deck: 'a', band: 'mid', value: 0.7 },
       decks(a),
-      noCrossfade,
+      noHandlers,
     )
     expect(a.setEqBand).toHaveBeenCalledWith('mid', 0.7)
   })
 
+  it('toggles the addressed deck headphone cue', () => {
+    const a = fakeDeck()
+    const b = { ...fakeDeck(), cue: true }
+    applyAppIntent({ kind: 'cue_toggle', deck: 'a' }, decks(a, b), noHandlers)
+    expect(a.setCue).toHaveBeenCalledWith(true)
+    applyAppIntent({ kind: 'cue_toggle', deck: 'b' }, decks(a, b), noHandlers)
+    expect(b.setCue).toHaveBeenCalledWith(false)
+  })
+
+  it('primes a stopped deck on deck_prep and stops a rolling one', () => {
+    const stopped = fakeDeck({ playing: false })
+    applyAppIntent({ kind: 'deck_prep', deck: 'a' }, decks(stopped), noHandlers)
+    expect(stopped.prime).toHaveBeenCalled()
+    expect(stopped.stop).not.toHaveBeenCalled()
+
+    const rolling = fakeDeck({ playing: true })
+    applyAppIntent({ kind: 'deck_prep', deck: 'a' }, decks(rolling), noHandlers)
+    expect(rolling.stop).toHaveBeenCalled()
+    expect(rolling.prime).not.toHaveBeenCalled()
+  })
+
+  it('refuses deck_prep while the deck cannot take it', () => {
+    const a = fakeDeck({ switchingModel: true })
+    applyAppIntent({ kind: 'deck_prep', deck: 'a' }, decks(a), noHandlers)
+    expect(a.prime).not.toHaveBeenCalled()
+    expect(a.stop).not.toHaveBeenCalled()
+  })
+
   it('hands crossfade to the callback', () => {
     const onCrossfade = vi.fn()
-    applyAppIntent({ kind: 'crossfade', value: 0.25 }, decks(), onCrossfade)
+    applyAppIntent(
+      { kind: 'crossfade', value: 0.25 },
+      decks(),
+      { ...noHandlers, onCrossfade },
+    )
     expect(onCrossfade).toHaveBeenCalledWith(0.25)
+  })
+
+  it('hands the cue mix to the callback', () => {
+    const onCueMix = vi.fn()
+    applyAppIntent(
+      { kind: 'cue_mix', value: 0.9 },
+      decks(),
+      { ...noHandlers, onCueMix },
+    )
+    expect(onCueMix).toHaveBeenCalledWith(0.9)
   })
 
   it('leaves style and record intents to their owners', () => {
     const a = fakeDeck()
     const onCrossfade = vi.fn()
+    const handlers = { ...noHandlers, onCrossfade }
     applyAppIntent(
       { kind: 'style_target', deck: 'a', index: 0 },
       decks(a),
-      onCrossfade,
+      handlers,
     )
-    applyAppIntent({ kind: 'record_toggle' }, decks(a), onCrossfade)
+    applyAppIntent({ kind: 'record_toggle' }, decks(a), handlers)
     expect(a.play).not.toHaveBeenCalled()
     expect(a.setStyle).not.toHaveBeenCalled()
     expect(onCrossfade).not.toHaveBeenCalled()

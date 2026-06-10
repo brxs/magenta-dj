@@ -60,6 +60,29 @@ describe('createFlx4Translator', () => {
         })
       },
     )
+
+    it.each([
+      [0x90, 'a'],
+      [0x91, 'b'],
+    ] as const)('channel CUE press on %s toggles deck %s headphone cue', (status, deck) => {
+      const translate = createFlx4Translator()
+      expect(translate([status, 0x54, PRESS])).toEqual({
+        kind: 'cue_toggle',
+        deck,
+      })
+      expect(translate([status, 0x54, RELEASE])).toBeNull()
+    })
+
+    it.each([
+      [0x90, 'a'],
+      [0x91, 'b'],
+    ] as const)('transport CUE press on %s preps deck %s', (status, deck) => {
+      const translate = createFlx4Translator()
+      expect(translate([status, 0x0c, PRESS])).toEqual({
+        kind: 'deck_prep',
+        deck,
+      })
+    })
   })
 
   describe('14-bit faders and knobs', () => {
@@ -134,6 +157,18 @@ describe('createFlx4Translator', () => {
       })
     })
 
+    it('maps the HEADPHONES MIX knob to the cue blend', () => {
+      const translate = createFlx4Translator()
+      expect(translate([0xb6, 0x0c, 0x40])).toEqual({
+        kind: 'cue_mix',
+        value: (0x40 << 7) / 16383,
+      })
+      expect(translate([0xb6, 0x2c, 0x10])).toEqual({
+        kind: 'cue_mix',
+        value: ((0x40 << 7) | 0x10) / 16383,
+      })
+    })
+
     it('combines MSB and LSB into the full-resolution value', () => {
       const translate = createFlx4Translator()
       translate([0xb6, 0x1f, 0x7f])
@@ -171,11 +206,11 @@ describe('createFlx4Translator', () => {
   })
 
   describe('unmapped traffic', () => {
+    // CUE (0x90 note 0x0C) left this list in M10: it now preps a deck.
     it('ignores controls the map deliberately leaves out', () => {
       const translate = createFlx4Translator()
       expect(translate([0xb0, 0x00, 0x40])).toBeNull() // tempo slider
       expect(translate([0xb0, 0x21, 0x40])).toBeNull() // jog wheel
-      expect(translate([0x90, 0x0c, PRESS])).toBeNull() // CUE
       expect(translate([0x90, 0x3f, PRESS])).toBeNull() // SHIFT
       expect(translate([0xf8, 0x00, 0x00])).toBeNull() // clock-ish noise
     })

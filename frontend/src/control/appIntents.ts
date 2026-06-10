@@ -3,14 +3,19 @@ import { isDeckOperable } from '../deck/deckState'
 import type { DeckControls } from '../deck/useDeck'
 import type { ControlIntent } from './bus'
 
-/** The App-owned slice of the intent union: transport, channel volume/EQ,
- * and the crossfader. Style and record intents are handled where that state
- * lives (DeckColumn, MixerStrip). Pure dispatch so the mapping is testable
- * without rendering the app. */
+export type AppIntentHandlers = {
+  onCrossfade: (position: number) => void
+  onCueMix: (position: number) => void
+}
+
+/** The App-owned slice of the intent union: transport, deck prep, channel
+ * volume/EQ/cue, the crossfader, and the cue mix. Style and record intents
+ * are handled where that state lives (DeckColumn, MixerStrip). Pure
+ * dispatch so the mapping is testable without rendering the app. */
 export function applyAppIntent(
   intent: ControlIntent,
   decks: Record<DeckId, DeckControls>,
-  onCrossfade: (position: number) => void,
+  handlers: AppIntentHandlers,
 ): void {
   switch (intent.kind) {
     case 'play_toggle': {
@@ -22,14 +27,31 @@ export function applyAppIntent(
       else void deck.play()
       return
     }
+    case 'deck_prep': {
+      const deck = decks[intent.deck]
+      if (!isDeckOperable(deck.state)) return
+      // CUE on a rolling deck (primed or on air) stops with flush; on a
+      // stopped deck it primes — generation audible only over the cue tap.
+      if (deck.state.playing) deck.stop()
+      else void deck.prime()
+      return
+    }
     case 'volume':
       decks[intent.deck].setVolume(intent.value)
       return
     case 'eq':
       decks[intent.deck].setEqBand(intent.band, intent.value)
       return
+    case 'cue_toggle': {
+      const deck = decks[intent.deck]
+      deck.setCue(!deck.cue)
+      return
+    }
     case 'crossfade':
-      onCrossfade(intent.value)
+      handlers.onCrossfade(intent.value)
+      return
+    case 'cue_mix':
+      handlers.onCueMix(intent.value)
       return
   }
 }

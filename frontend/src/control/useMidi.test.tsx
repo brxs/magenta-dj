@@ -60,4 +60,17 @@ describe('useMidi pad LEDs', () => {
     const { result } = renderHook(() => useMidi(), { wrapper })
     expect(() => result.current.setPadLeds('a', 3)).not.toThrow()
   })
+
+  it('echoes single-button LEDs with on/off velocities', async () => {
+    const send = vi.fn()
+    stubMidiAccess(send)
+    const { result } = renderHook(() => useMidi(), { wrapper })
+    act(() => result.current.connect())
+    await waitFor(() => expect(result.current.status).toBe('connected'))
+
+    result.current.setLed(0x90, 0x54, true)
+    expect(send).toHaveBeenLastCalledWith([0x90, 0x54, 0x7f])
+    result.current.setLed(0x91, 0x0c, false)
+    expect(send).toHaveBeenLastCalledWith([0x91, 0x0c, 0x00])
+  })
 })

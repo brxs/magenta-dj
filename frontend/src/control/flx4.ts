@@ -11,7 +11,15 @@
 import type { DeckId } from '../audio/engine'
 import type { ControlIntent } from './bus'
 
-const NOTE_ON_DECK: Partial<Record<number, DeckId>> = { 0x90: 'a', 0x91: 'b' }
+/** Per-deck Note On status bytes, shared with the cue LEDs. */
+export const NOTE_ON_STATUS_BY_DECK: Record<DeckId, number> = {
+  a: 0x90,
+  b: 0x91,
+}
+const NOTE_ON_DECK: Partial<Record<number, DeckId>> = {
+  [NOTE_ON_STATUS_BY_DECK.a]: 'a',
+  [NOTE_ON_STATUS_BY_DECK.b]: 'b',
+}
 /** Pad bank status bytes, shared with the LED echo (same status out). */
 export const PAD_STATUS_BY_DECK: Record<DeckId, number> = { a: 0x97, b: 0x99 }
 const PAD_DECK: Partial<Record<number, DeckId>> = {
@@ -21,6 +29,8 @@ const PAD_DECK: Partial<Record<number, DeckId>> = {
 const BEAT_FX_STATUSES = [0x94, 0x95]
 const PLAY_NOTE = 0x0b
 const RECORD_NOTE = 0x47
+export const CHANNEL_CUE_NOTE = 0x54
+export const TRANSPORT_CUE_NOTE = 0x0c
 export const PAD_COUNT = 8
 
 const CC_DECK: Partial<Record<number, DeckId>> = { 0xb0: 'a', 0xb1: 'b' }
@@ -56,6 +66,8 @@ function ccBuilder(
         return (value) => ({ kind: 'style_sweep', deck: 'a', value })
       case 0x18:
         return (value) => ({ kind: 'style_sweep', deck: 'b', value })
+      case 0x0c:
+        return (value) => ({ kind: 'cue_mix', value })
     }
   }
   return null
@@ -64,6 +76,12 @@ function ccBuilder(
 function buttonIntent(status: number, note: number): ControlIntent | null {
   const playDeck = NOTE_ON_DECK[status]
   if (playDeck && note === PLAY_NOTE) return { kind: 'play_toggle', deck: playDeck }
+  if (playDeck && note === CHANNEL_CUE_NOTE) {
+    return { kind: 'cue_toggle', deck: playDeck }
+  }
+  if (playDeck && note === TRANSPORT_CUE_NOTE) {
+    return { kind: 'deck_prep', deck: playDeck }
+  }
   const padDeck = PAD_DECK[status]
   if (padDeck && note < PAD_COUNT) {
     return { kind: 'style_target', deck: padDeck, index: note }
