@@ -347,13 +347,21 @@ cue_state = {"connected": False}
 @app.websocket("/ws/cue")
 async def cue_socket(websocket: WebSocket) -> None:
     """Cue feed up from the browser: binary frames of interleaved stereo
-    float32 LE at 48 kHz, played to the phones pair of `?device=`."""
+    float32 LE at 48 kHz, played to the phones pair of `?device=`.
+
+    Always accepts before refusing: a close before accept reaches the
+    browser as a bare handshake failure with the code and reason — the
+    user-facing message — stripped. The client treats the `ready` event,
+    not the socket opening, as acceptance.
+    """
     if cue_state["connected"]:
+        await websocket.accept()
         await websocket.close(code=4409, reason="cue already has a client")
         return
     cue_state["connected"] = True
     sink = None
     try:
+        await websocket.accept()
         device = websocket.query_params.get("device", "")
         try:
             # Opening a PortAudio stream blocks briefly; keep the loop free.
@@ -362,7 +370,7 @@ async def cue_socket(websocket: WebSocket) -> None:
             logger.warning("cue sink for %r failed: %s", device, error)
             await websocket.close(code=4404, reason=str(error))
             return
-        await websocket.accept()
+        await websocket.send_text(json.dumps({"event": "ready"}))
         while True:
             try:
                 payload = await websocket.receive_bytes()

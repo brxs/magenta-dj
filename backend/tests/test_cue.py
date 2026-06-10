@@ -108,6 +108,7 @@ class TestCueSocket:
     def test_streams_frames_into_the_sink_and_closes_it(self, cue_client):
         payload = stereo((0.1, 0.2)).tobytes()
         with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4") as ws:
+            assert ws.receive_json() == {"event": "ready"}
             ws.send_bytes(payload)
             ws.send_bytes(payload)
         sink = FakeSink.instances[0]
@@ -116,22 +117,36 @@ class TestCueSocket:
         assert sink.closed
         assert controller.cue_state["connected"] is False
 
-    def test_rejects_an_unknown_device(self, cue_client):
-        with pytest.raises(WebSocketDisconnect) as excinfo:
-            with cue_client.websocket_connect("/ws/cue?device=Nope"):
-                pass
+    def test_refuses_an_unknown_device_with_a_delivered_reason(self, cue_client):
+        # Accept-then-close: the code and reason must survive to the
+        # client — they are the user-facing error message.
+        with cue_client.websocket_connect("/ws/cue?device=Nope") as ws:
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
         assert excinfo.value.code == 4404
+        assert "Nope" in excinfo.value.reason
 
     def test_allows_only_one_client(self, cue_client):
-        with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4"):
-            with pytest.raises(WebSocketDisconnect) as excinfo:
-                with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4"):
-                    pass
+        with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4") as first:
+            assert first.receive_json() == {"event": "ready"}
+            with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4") as second:
+                with pytest.raises(WebSocketDisconnect) as excinfo:
+                    second.receive_json()
             assert excinfo.value.code == 4409
 
     def test_reports_malformed_frames_without_dying(self, cue_client):
         with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4") as ws:
+            assert ws.receive_json() == {"event": "ready"}
             ws.send_bytes(b"\x00" * 7)
+            error = ws.receive_json()
+            assert error["event"] == "error"
+            ws.send_bytes(stereo((0.1, 0.1)).tobytes())
+        assert len(FakeSink.instances[0].pushed) == 1
+
+    def test_reports_text_frames_without_dying(self, cue_client):
+        with cue_client.websocket_connect("/ws/cue?device=DDJ-FLX4") as ws:
+            assert ws.receive_json() == {"event": "ready"}
+            ws.send_text("not audio")
             error = ws.receive_json()
             assert error["event"] == "error"
             ws.send_bytes(stereo((0.1, 0.1)).tobytes())

@@ -12,7 +12,7 @@ class FakeWebSocket {
   binaryType = ''
   readyState = 0
   sent: unknown[] = []
-  onopen: (() => void) | null = null
+  onmessage: ((event: { data: unknown }) => void) | null = null
   onclose: ((event: { reason: string }) => void) | null = null
 
   constructor(url: string) {
@@ -28,9 +28,9 @@ class FakeWebSocket {
     this.readyState = FakeWebSocket.CLOSED
   }
 
-  serverOpen() {
+  serverReady() {
     this.readyState = FakeWebSocket.OPEN
-    this.onopen?.()
+    this.onmessage?.({ data: JSON.stringify({ event: 'ready' }) })
   }
 
   serverClose(reason = '') {
@@ -67,7 +67,7 @@ describe('startCueStream', () => {
     const streaming = startCueStream(engine, 'DDJ-FLX4')
     expect(socket().url).toContain('/ws/cue?device=DDJ-FLX4')
 
-    socket().serverOpen()
+    socket().serverReady()
     await streaming
     const samples = new Float32Array([0.1, -0.1])
     emitChunk(samples)
@@ -85,7 +85,7 @@ describe('startCueStream', () => {
   it('stop() ends the capture and closes the socket', async () => {
     const { engine, emitChunk } = fakeEngine()
     const streaming = startCueStream(engine, 'DDJ-FLX4')
-    socket().serverOpen()
+    socket().serverReady()
     const stop = await streaming
 
     stop()
@@ -98,7 +98,7 @@ describe('startCueStream', () => {
   it('stops the capture when the backend drops mid-stream', async () => {
     const { engine } = fakeEngine()
     const streaming = startCueStream(engine, 'DDJ-FLX4')
-    socket().serverOpen()
+    socket().serverReady()
     await streaming
 
     socket().serverClose('backend restarted')

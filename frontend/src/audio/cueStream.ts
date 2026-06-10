@@ -27,8 +27,10 @@ export async function listCueJackOutputs(): Promise<CueJackOutput[]> {
 }
 
 /** Open the cue stream to `deviceName`. Resolves with a stop function
- * once the backend accepts and capture is running; rejects when the
- * backend refuses (unknown device, busy sink) or capture cannot start. */
+ * once the backend signals `ready` and capture is running; rejects when
+ * the backend refuses (unknown device, busy sink) or capture cannot
+ * start. The socket *opening* is not acceptance — the backend accepts
+ * every handshake so its refusal reason survives to the close frame. */
 export function startCueStream(
   engine: AudioEngine,
   deviceName: string,
@@ -39,7 +41,7 @@ export function startCueStream(
       `${scheme}://${location.host}/ws/cue?device=${encodeURIComponent(deviceName)}`,
     )
     socket.binaryType = 'arraybuffer'
-    let opened = false
+    let ready = false
 
     function stop() {
       engine.stopCueCapture()
@@ -47,8 +49,9 @@ export function startCueStream(
       socket.close()
     }
 
-    socket.onopen = () => {
-      opened = true
+    socket.onmessage = (event) => {
+      if (ready || typeof event.data !== 'string') return
+      ready = true
       engine
         .startCueCapture((samples) => {
           if (socket.readyState === WebSocket.OPEN) socket.send(samples)
@@ -57,14 +60,12 @@ export function startCueStream(
           () => resolve(stop),
           (cause: unknown) => {
             socket.close()
-            reject(
-              cause instanceof Error ? cause : new Error(String(cause)),
-            )
+            reject(cause instanceof Error ? cause : new Error(String(cause)))
           },
         )
     }
     socket.onclose = (event) => {
-      if (opened) {
+      if (ready) {
         // The backend went away mid-stream; stop feeding a dead socket.
         engine.stopCueCapture()
       } else {

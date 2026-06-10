@@ -2,7 +2,7 @@
  * crossfade chain (audio bus + persistence) is owned by App and must hold
  * from both the on-screen slider and the hardware intent path. */
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
@@ -11,6 +11,19 @@ import type { AudioEngine } from './audio/engine'
 import { createControlBus, type ControlBus } from './control/bus'
 import { ControlBusProvider } from './control/ControlBusProvider'
 import { loadAppSettings, updateAppSettings } from './persistence'
+
+// The scan needs deterministic devices; startCueStream stays real so the
+// routing logic runs against the fake socket below.
+vi.mock('./audio/outputs', () => ({
+  listAudioOutputs: vi.fn(async () => []),
+}))
+vi.mock('./audio/cueStream', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./audio/cueStream')>()
+  return {
+    ...actual,
+    listCueJackOutputs: vi.fn(async () => [{ name: 'DDJ-FLX4' }]),
+  }
+})
 
 class FakeWebSocket {
   static CONNECTING = 0
@@ -23,7 +36,7 @@ class FakeWebSocket {
   readyState = FakeWebSocket.CONNECTING
   onopen: (() => void) | null = null
   onmessage: ((event: { data: unknown }) => void) | null = null
-  onclose: (() => void) | null = null
+  onclose: ((event?: { reason: string }) => void) | null = null
 
   constructor(url: string) {
     this.url = url
@@ -100,6 +113,61 @@ describe('App crossfade ownership', () => {
     renderApp(engine)
     expect(engine.setCueDevice).toHaveBeenCalledWith('flx4')
     expect(screen.getByLabelText('Phones out')).toHaveValue('DDJ-FLX4')
+  })
+
+  it('does not persist a backend pick the backend refused', async () => {
+    renderApp(makeEngine())
+    fireEvent.click(screen.getByRole('button', { name: 'Find devices' }))
+    const select = screen.getByLabelText('Phones out')
+    await waitFor(() => expect(select).toContainHTML('phones jack'))
+
+    fireEvent.change(select, { target: { value: 'DDJ-FLX4 — phones jack' } })
+    const cueSocket = await waitFor(() => {
+      const socket = FakeWebSocket.instances.find((candidate) =>
+        candidate.url.includes('/ws/cue'),
+      )
+      expect(socket).toBeDefined()
+      return socket!
+    })
+    act(() => cueSocket.onclose?.({ reason: 'cue already has a client' }))
+
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'cue already has a client',
+      ),
+    )
+    // The failed pick must survive neither in state nor across a reload.
+    expect(select).toHaveValue('Off')
+    expect(loadAppSettings().cueDevice).toBeUndefined()
+  })
+
+  it('a stale backend pick stops itself instead of clobbering a newer one', async () => {
+    renderApp(makeEngine())
+    fireEvent.click(screen.getByRole('button', { name: 'Find devices' }))
+    const select = screen.getByLabelText('Phones out')
+    await waitFor(() => expect(select).toContainHTML('phones jack'))
+
+    // Pick the jack (stream pending), then switch to Off before the
+    // backend answers.
+    fireEvent.change(select, { target: { value: 'DDJ-FLX4 — phones jack' } })
+    fireEvent.change(select, { target: { value: 'Off' } })
+    await waitFor(() => expect(loadAppSettings().cueDevice).toBeNull())
+
+    // The late acceptance must shut its own stream down, not install it.
+    const cueSocket = await waitFor(() => {
+      const socket = FakeWebSocket.instances.find((candidate) =>
+        candidate.url.includes('/ws/cue'),
+      )
+      expect(socket).toBeDefined()
+      return socket!
+    })
+    act(() => {
+      cueSocket.readyState = FakeWebSocket.OPEN
+      cueSocket.onmessage?.({ data: JSON.stringify({ event: 'ready' }) })
+    })
+    await waitFor(() => expect(cueSocket.readyState).toBe(FakeWebSocket.CLOSED))
+    expect(loadAppSettings().cueDevice).toBeNull()
+    expect(select).toHaveValue('Off')
   })
 
   it('restores a backend cue device by opening the cue stream', () => {

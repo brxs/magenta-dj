@@ -11,8 +11,10 @@
  * sweep. The cue path (ADR-0006) taps each deck post-EQ, pre-fader, blends
  * with the master per the cue-mix position, and leaves through a SECOND
  * sink — an audio element pinned to the chosen headphone device — because
- * Chromium caps a context's output at stereo. Everything is created lazily
- * on the first play() (browser autoplay policy requires a user gesture).
+ * Chromium caps a context's output at stereo. The graph is created lazily:
+ * normally on the first play(), or at load when a persisted cue route
+ * restores — either way the context stays suspended (silent) until a user
+ * gesture resumes it, per the browser autoplay policy.
  */
 
 import { EQ_BANDS, EQ_FILTERS, eqValueToDb, type EqBand } from './eq'

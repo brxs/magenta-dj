@@ -37,8 +37,11 @@ function App() {
   )
 
   // A live backend cue stream's stop function (ADR-0007); null while the
-  // cue rides a browser sink or is off.
+  // cue rides a browser sink or is off. The token guards the async hops:
+  // only the latest routing attempt may install its stream — a stale one
+  // stops itself instead of overwriting a newer pick.
   const cueStreamStop = useRef<(() => void) | null>(null)
+  const cueRouteToken = useRef(0)
 
   // Hand the restored mix positions and cue device to the engine once —
   // it holds them until the bus is built on first play. Later moves go
@@ -48,9 +51,11 @@ function App() {
     engine.setCrossfade(crossfade)
     engine.setCueMix(cueMix)
     if (cueDevice?.backend) {
+      const token = ++cueRouteToken.current
       void startCueStream(engine, cueDevice.deviceId)
         .then((stop) => {
-          cueStreamStop.current = stop
+          if (token === cueRouteToken.current) cueStreamStop.current = stop
+          else stop()
         })
         .catch(() => {})
     } else if (cueDevice) {
@@ -87,16 +92,27 @@ function App() {
 
   const handleCueDevice = useCallback(
     async (device: AudioOutputDevice | null) => {
-      setCueDevice(device)
-      updateAppSettings({ cueDevice: device })
+      const token = ++cueRouteToken.current
+      // The previous stream stops eagerly — the backend sink takes one
+      // client, so a jack-to-jack switch must free it first.
       cueStreamStop.current?.()
       cueStreamStop.current = null
       if (device?.backend) {
         await engine.setCueDevice(null)
-        cueStreamStop.current = await startCueStream(engine, device.deviceId)
+        const stop = await startCueStream(engine, device.deviceId)
+        if (token !== cueRouteToken.current) {
+          stop()
+          return
+        }
+        cueStreamStop.current = stop
       } else {
         await engine.setCueDevice(device?.deviceId ?? null)
+        if (token !== cueRouteToken.current) return
       }
+      // State and persistence reflect only routes that actually took:
+      // a failed pick must not survive a reload.
+      setCueDevice(device)
+      updateAppSettings({ cueDevice: device })
     },
     [engine],
   )
