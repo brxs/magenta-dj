@@ -148,11 +148,7 @@ export function DeckColumn({
   const resentRef = useRef(false)
   useEffect(() => {
     const needsStyle =
-      state.connection === 'open' &&
-      !state.switchingModel &&
-      !state.workerDied &&
-      !state.activeStyle &&
-      targets.length > 0
+      isDeckOperable(state) && !state.activeStyle && targets.length > 0
     if (!needsStyle) {
       resentRef.current = false
       return
