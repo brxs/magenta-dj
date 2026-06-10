@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
+import { updateDeckSettings } from '../persistence'
 import { DeckPanel } from './DeckPanel'
 import { initialDeckState, type DeckState } from './deckState'
 
@@ -198,6 +199,26 @@ describe('DeckPanel', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('restores persisted targets and re-applies the style to a fresh worker', () => {
+    updateDeckSettings('a', {
+      targets: [
+        { text: 'funk', x: 0.2, y: 0.2 },
+        { text: 'techno', x: 0.8, y: 0.8 },
+      ],
+      cursor: { x: 0.2, y: 0.2 },
+    })
+    const onSetStyle = vi.fn()
+    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+
+    // The arrangement is restored…
+    expect(screen.getByRole('button', { name: 'Remove funk' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove techno' })).toBeInTheDocument()
+    // …and re-sent once (cursor sits on funk, so funk dominates).
+    expect(onSetStyle).toHaveBeenCalledTimes(1)
+    const style = onSetStyle.mock.calls[0][0]
+    expect(style.prompts[0]).toEqual({ text: 'funk', weight: 1 })
   })
 
   it('shows the active blend summary', () => {

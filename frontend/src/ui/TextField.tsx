@@ -3,6 +3,7 @@ import { useId } from 'react'
 
 type TextFieldProps = InputHTMLAttributes<HTMLInputElement> & {
   label: string
+  'data-shortcut'?: string
 }
 
 export function TextField({ label, ...props }: TextFieldProps) {

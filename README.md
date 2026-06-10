@@ -30,9 +30,15 @@ when the combined selection looks tight for your RAM.
 just run
 ```
 
-Then open <http://127.0.0.1:8000> — set a style prompt, hit play, ride the
-volume fader. The health row shows the stream buffer, underrun count, and
-generation speed.
+Then open <http://127.0.0.1:8000> — add style targets to a deck's pad, hit
+play, blend targets by dragging the cursor (or the dots themselves, to
+cluster them), and ride the crossfader between decks. **Record** in the
+mixer captures the master bus to a downloadable WAV. The health row shows
+the stream buffer, underrun count, and generation speed.
+
+Settings (pad arrangements, volumes, crossfade) persist across reloads.
+Shortcuts: `A`/`B` focus a deck's style-target input, `X` focuses the
+crossfader.
 
 For frontend development: `just dev-backend` in one terminal, `just
 dev-frontend` in another (the Vite dev server proxies `/ws` to the backend).

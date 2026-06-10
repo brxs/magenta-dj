@@ -45,3 +45,9 @@ body {
   margin: 0;
   max-width: 100%;
 }
+
+.app__hint {
+  font: 400 var(--text-s) var(--font-ui);
+  color: var(--color-text-muted);
+  margin: 0;
+}

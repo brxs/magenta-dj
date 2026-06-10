@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { useAudioEngine } from '../audio/engineContext'
+import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import type { DeckChannel, DeckId } from '../audio/engine'
 import {
   deckReducer,
@@ -28,7 +29,7 @@ export type DeckControls = {
 export function useDeck(deckId: DeckId): DeckControls {
   const engine = useAudioEngine()
   const [state, dispatch] = useReducer(deckReducer, initialDeckState)
-  const [volume, setVolumeState] = useState(0.8)
+  const [volume, setVolumeState] = useState(() => loadDeckSettings(deckId).volume ?? 0.8)
   const volumeRef = useRef(volume)
 
   const socketRef = useRef<WebSocket | null>(null)
@@ -157,11 +158,15 @@ export function useDeck(deckId: DeckId): DeckControls {
     send({ type: 'restart' })
   }, [send])
 
-  const setVolume = useCallback((next: number) => {
-    setVolumeState(next)
-    volumeRef.current = next
-    channelRef.current?.setVolume(next)
-  }, [])
+  const setVolume = useCallback(
+    (next: number) => {
+      setVolumeState(next)
+      volumeRef.current = next
+      channelRef.current?.setVolume(next)
+      updateDeckSettings(deckId, { volume: next })
+    },
+    [deckId],
+  )
 
   return {
     state,

@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AudioEngineProvider } from '../audio/AudioEngineProvider'
+import { updateDeckSettings } from '../persistence'
 import type { AudioEngine, DeckChannel } from '../audio/engine'
 import { useDeck } from './useDeck'
 
@@ -65,6 +66,8 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     createDeckChannel: vi.fn(async () => channel),
     resume: vi.fn(async () => {}),
     setCrossfade: vi.fn(),
+    startRecording: vi.fn(async () => {}),
+    stopRecording: vi.fn(async () => new Blob()),
     ...overrides,
   }
   return { engine, channel }
@@ -197,6 +200,12 @@ describe('useDeck connection', () => {
       JSON.stringify({ type: 'set_model', model: 'mrt2_base' }),
       JSON.stringify({ type: 'restart' }),
     ])
+  })
+
+  it('restores the persisted volume', () => {
+    updateDeckSettings('a', { volume: 0.55 })
+    const { result } = renderDeck(makeFakeEngine().engine)
+    expect(result.current.volume).toBe(0.55)
   })
 
   it('surfaces malformed frames as dropped, not crashes', () => {

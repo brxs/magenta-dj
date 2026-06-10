@@ -86,3 +86,53 @@ class PCMPlayer extends AudioWorkletProcessor {
 }
 
 registerProcessor('pcm-player', PCMPlayer);
+
+// Recorder: taps the master bus (post-crossfade, post-volume — exactly the
+// speaker feed) and batches interleaved stereo float32 to the main thread.
+// Messages in: {type: 'start'} | {type: 'stop'} (stop flushes, then posts
+// {type: 'done'}).
+
+const RECORD_BATCH_FRAMES = 4800; // 0.1s per message
+
+class PCMRecorder extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.recording = false;
+    this.batch = new Float32Array(RECORD_BATCH_FRAMES * 2);
+    this.batchFrames = 0;
+    this.port.onmessage = (event) => {
+      if (event.data.type === 'start') {
+        this.recording = true;
+        this.batchFrames = 0;
+      } else if (event.data.type === 'stop') {
+        this.recording = false;
+        this.flush();
+        this.port.postMessage({ type: 'done' });
+      }
+    };
+  }
+
+  flush() {
+    if (this.batchFrames === 0) return;
+    const out = this.batch.slice(0, this.batchFrames * 2);
+    this.port.postMessage({ type: 'pcm', samples: out }, [out.buffer]);
+    this.batchFrames = 0;
+  }
+
+  process(inputs) {
+    if (!this.recording) return true;
+    const input = inputs[0];
+    if (!input || input.length === 0) return true;
+    const left = input[0];
+    const right = input[1] ?? input[0];
+    for (let i = 0; i < left.length; i++) {
+      this.batch[2 * this.batchFrames] = left[i];
+      this.batch[2 * this.batchFrames + 1] = right[i];
+      this.batchFrames += 1;
+      if (this.batchFrames === RECORD_BATCH_FRAMES) this.flush();
+    }
+    return true;
+  }
+}
+
+registerProcessor('pcm-recorder', PCMRecorder);

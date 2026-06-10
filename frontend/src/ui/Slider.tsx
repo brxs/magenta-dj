@@ -6,10 +6,19 @@ type SliderProps = {
   max: number
   step: number
   value: number
+  'data-shortcut'?: string
   onChange: (value: number) => void
 }
 
-export function Slider({ label, min, max, step, value, onChange }: SliderProps) {
+export function Slider({
+  label,
+  min,
+  max,
+  step,
+  value,
+  'data-shortcut': dataShortcut,
+  onChange,
+}: SliderProps) {
   const id = useId()
   return (
     <div className="ui-slider">
@@ -24,6 +33,7 @@ export function Slider({ label, min, max, step, value, onChange }: SliderProps) 
         max={max}
         step={step}
         value={value}
+        data-shortcut={dataShortcut}
         onChange={(event) => onChange(Number(event.target.value))}
       />
     </div>

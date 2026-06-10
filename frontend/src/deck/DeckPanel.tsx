@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '../ui/Button'
@@ -8,8 +8,10 @@ import { Slider } from '../ui/Slider'
 import { Stat } from '../ui/Stat'
 import { TextField } from '../ui/TextField'
 import { XYPad } from '../ui/XYPad'
+import type { DeckId } from '../audio/engine'
 import type { ActiveStyle, DeckState } from './deckState'
 import { padWeights, spawnPosition, type PadPoint } from './padWeights'
+import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import './deck.css'
 
 // The worker holds ~3s of lead (see backend worker pacing); the meter shows
@@ -52,7 +54,7 @@ function createSendThrottle(intervalMs: number) {
 }
 
 type DeckPanelProps = {
-  deckId: string
+  deckId: DeckId
   state: DeckState
   volume: number
   onPlay: () => void
@@ -75,8 +77,12 @@ export function DeckPanel({
   onSetVolume,
 }: DeckPanelProps) {
   const { t } = useTranslation()
-  const [targets, setTargets] = useState<(PadPoint & { text: string })[]>([])
-  const [cursor, setCursor] = useState<PadPoint>({ x: 0.5, y: 0.5 })
+  const [targets, setTargets] = useState<(PadPoint & { text: string })[]>(
+    () => loadDeckSettings(deckId).targets ?? [],
+  )
+  const [cursor, setCursor] = useState<PadPoint>(
+    () => loadDeckSettings(deckId).cursor ?? { x: 0.5, y: 0.5 },
+  )
   const [targetDraft, setTargetDraft] = useState('')
   const [throttle] = useState(() => createSendThrottle(STYLE_SEND_INTERVAL_MS))
 
@@ -121,6 +127,35 @@ export function DeckPanel({
   }
 
   useEffect(() => () => throttle.cancel(), [throttle])
+
+  // Persist the pad arrangement so a reload picks the session back up.
+  useEffect(() => {
+    updateDeckSettings(deckId, { targets, cursor })
+  }, [deckId, targets, cursor])
+
+  // The worker has no style after a reload, a model switch, or a crash
+  // restart — re-apply the pad's arrangement once per such episode, as soon
+  // as the deck can take it. Ref-gated so the in-flight server echo doesn't
+  // trigger duplicate sends on every render.
+  const resentRef = useRef(false)
+  useEffect(() => {
+    const needsStyle =
+      state.connection === 'open' &&
+      !state.switchingModel &&
+      !state.workerDied &&
+      !state.activeStyle &&
+      targets.length > 0
+    if (!needsStyle) {
+      resentRef.current = false
+      return
+    }
+    if (resentRef.current) return
+    resentRef.current = true
+    throttle.immediate(() => {
+      const style = styleFor(targets, cursor)
+      if (style) onSetStyle(style)
+    })
+  })
 
   function addTarget() {
     const text = targetDraft.trim()
@@ -204,6 +239,7 @@ export function DeckPanel({
         <TextField
           label={t('deck.style.target')}
           placeholder={t('deck.style.targetPlaceholder')}
+          data-shortcut={`deck-${deckId}-prompt`}
           value={targetDraft}
           onChange={(event) => setTargetDraft(event.target.value)}
           onKeyDown={(event) => {

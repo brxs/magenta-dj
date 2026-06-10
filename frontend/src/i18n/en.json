@@ -1,13 +1,18 @@
 {
   "app": {
     "title": "magenta-dj",
-    "ramWarning": "Selected models need roughly {{combined}} GB on a {{total}} GB machine — real-time playback may struggle."
+    "ramWarning": "Selected models need roughly {{combined}} GB on a {{total}} GB machine — real-time playback may struggle.",
+    "shortcutsHint": "Shortcuts: A / B focus a deck's style target · X focuses the crossfader"
   },
   "mixer": {
     "title": "Mixer",
     "crossfade": "Crossfade",
     "deckA": "A",
-    "deckB": "B"
+    "deckB": "B",
+    "record": "Record",
+    "stopRecording": "Stop recording",
+    "recordingFor": "REC {{time}}",
+    "recordingError": "Recording failed: {{message}}"
   },
   "deck": {
     "title": "Deck {{id}}",
