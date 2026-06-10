@@ -11,6 +11,7 @@ export function handleShortcutKey(event: KeyboardEvent): void {
   if (event.metaKey || event.ctrlKey || event.altKey) return
   const origin = event.target as HTMLElement
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(origin.tagName)) return
+  if (origin.isContentEditable) return
   const target = SHORTCUTS[event.key]
   if (!target) return
   event.preventDefault()

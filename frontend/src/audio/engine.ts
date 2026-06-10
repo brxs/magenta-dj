@@ -42,6 +42,7 @@ export type AudioEngine = {
 
 const SAMPLE_RATE = 48_000
 const PARAM_RAMP_SECONDS = 0.02
+const FLUSH_TIMEOUT_MS = 2_000
 
 /** Centre position; the single source for App state and the bus default. */
 export const INITIAL_CROSSFADE = 0.5
@@ -163,19 +164,31 @@ export function createAudioEngine(): AudioEngine {
       const bus = await ensureBus()
       const { node, chunks } = recorder
       recorder = null
-      // The worklet flushes its partial batch before acknowledging the stop,
-      // so the file ends exactly where the user stopped.
-      await new Promise<void>((resolve) => {
-        node.port.onmessage = (event) => {
-          if (event.data.type === 'pcm') {
-            chunks.push(floatToInt16(event.data.samples as Float32Array))
-          } else if (event.data.type === 'done') {
-            resolve()
+      try {
+        // Worklet messages are serviced by the rendering thread; a
+        // suspended context (audio interruption) would otherwise leave the
+        // stop unacknowledged forever.
+        await bus.context.resume()
+        // The worklet flushes its partial batch before acknowledging the
+        // stop, so the file ends exactly where the user stopped.
+        await new Promise<void>((resolve, reject) => {
+          const deadline = setTimeout(
+            () => reject(new Error('recorder did not flush in time')),
+            FLUSH_TIMEOUT_MS,
+          )
+          node.port.onmessage = (event) => {
+            if (event.data.type === 'pcm') {
+              chunks.push(floatToInt16(event.data.samples as Float32Array))
+            } else if (event.data.type === 'done') {
+              clearTimeout(deadline)
+              resolve()
+            }
           }
-        }
-        node.port.postMessage({ type: 'stop' })
-      })
-      bus.master.disconnect(node)
+          node.port.postMessage({ type: 'stop' })
+        })
+      } finally {
+        bus.master.disconnect(node)
+      }
       return encodeWav(chunks, SAMPLE_RATE, 2)
     },
 

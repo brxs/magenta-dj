@@ -27,12 +27,10 @@ function renderMixer(engine: AudioEngine) {
 describe('Mixer recording', () => {
   it('records the master bus and downloads the WAV on stop', async () => {
     const engine = makeEngine()
-    const objectUrl = vi.fn(() => 'blob:fake')
-    vi.stubGlobal('URL', {
-      ...URL,
-      createObjectURL: objectUrl,
-      revokeObjectURL: vi.fn(),
-    })
+    const objectUrl = vi
+      .spyOn(URL, 'createObjectURL')
+      .mockReturnValue('blob:fake')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
     try {
       renderMixer(engine)
 
@@ -48,7 +46,7 @@ describe('Mixer recording', () => {
       await waitFor(() => expect(objectUrl).toHaveBeenCalled())
       expect(screen.getByRole('button', { name: 'Record' })).toBeVisible()
     } finally {
-      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
     }
   })
 

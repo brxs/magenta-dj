@@ -63,9 +63,15 @@ export function loadDeckSettings(deckId: DeckId): Partial<DeckSettings> {
       (target) => isPoint(target) && typeof target.text === 'string',
     )
   ) {
-    settings.targets = stored.targets
+    settings.targets = stored.targets.map((target) => ({
+      text: target.text,
+      x: clamp01(target.x),
+      y: clamp01(target.y),
+    }))
   }
-  if (isPoint(stored.cursor)) settings.cursor = stored.cursor
+  if (isPoint(stored.cursor)) {
+    settings.cursor = { x: clamp01(stored.cursor.x), y: clamp01(stored.cursor.y) }
+  }
   if (Number.isFinite(stored.volume)) {
     settings.volume = clamp01(stored.volume as number)
   }
