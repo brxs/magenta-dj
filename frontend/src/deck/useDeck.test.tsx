@@ -62,6 +62,8 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     setVolume: vi.fn(),
     setEq: vi.fn(),
     setCue: vi.fn(),
+    setFx: vi.fn(),
+    setFxAmount: vi.fn(),
     setOnAir: vi.fn(),
     getLevel: vi.fn(() => 0),
     getWaveformRange: vi.fn(() => [0, 0] as [number, number]),
@@ -265,6 +267,30 @@ describe('useDeck connection', () => {
     expect(result.current.primed).toBe(false)
     expect(channel.reset).toHaveBeenCalled()
     expect(channel.setOnAir).toHaveBeenLastCalledWith(true)
+  })
+
+  it('restores persisted FX, routes changes, and parks the knob on switch', async () => {
+    updateDeckSettings('a', { fx: { kind: 'dub_echo', amount: 0.6 } })
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    expect(result.current.fx).toEqual({ kind: 'dub_echo', amount: 0.6 })
+
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+    // The channel is built with the restored effect…
+    expect(vi.mocked(engine.createDeckChannel).mock.calls[0][1]).toMatchObject({
+      fx: { kind: 'dub_echo', amount: 0.6 },
+    })
+
+    // …live knob moves reach it…
+    act(() => result.current.setFxAmount(0.8))
+    expect(channel.setFxAmount).toHaveBeenCalledWith(0.8)
+
+    // …and switching to the bipolar filter parks the knob at centre.
+    act(() => result.current.setFx('filter'))
+    expect(result.current.fx).toEqual({ kind: 'filter', amount: 0.5 })
+    expect(channel.setFx).toHaveBeenCalledWith('filter')
+    expect(channel.setFxAmount).toHaveBeenLastCalledWith(0.5)
   })
 
   it('seeds a pre-play cue toggle into the channel and routes live ones', async () => {

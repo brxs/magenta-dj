@@ -28,6 +28,14 @@ export function isFxActive(kind: FxKind, amount: number): boolean {
   return Math.abs(clamp01(amount) - fxRestPosition(kind)) > FX_DEAD_ZONE
 }
 
+/** Whether the effect replaces the dry signal (filter, crush, sweep) or
+ * adds to it (echo tail, hall, noise riser) while active. */
+export function fxBlend(kind: FxKind): 'replace' | 'add' {
+  return kind === 'filter' || kind === 'crush' || kind === 'sweep'
+    ? 'replace'
+    : 'add'
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }

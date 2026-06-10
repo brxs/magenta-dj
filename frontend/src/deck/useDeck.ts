@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { EQ_FLAT, type EqBand } from '../audio/eq'
+import { fxRestPosition, type FxKind } from '../audio/fx'
 import { useAudioEngine } from '../audio/engineContext'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import type { DeckChannel, DeckId } from '../audio/engine'
@@ -22,6 +23,12 @@ export type DeckControls = {
    * a reload never blasts the phones unexpectedly. */
   cue: boolean
   setCue: (on: boolean) => void
+  /** Color FX insert (M12): the selected effect and its knob position. */
+  fx: { kind: FxKind | null; amount: number }
+  /** Selecting an effect parks the knob at its rest position, so a
+   * switch never lands mid-effect. */
+  setFx: (kind: FxKind | null) => void
+  setFxAmount: (amount: number) => void
   /** Generating but off air (M10): buffer fills, only the cue tap hears
    * it. play() then drops it on air without flushing what was built up. */
   primed: boolean
@@ -51,6 +58,10 @@ export function useDeck(deckId: DeckId): DeckControls {
   const eqRef = useRef(eq)
   const [cue, setCueState] = useState(false)
   const cueRef = useRef(cue)
+  const [fx, setFxState] = useState<{ kind: FxKind | null; amount: number }>(
+    () => loadDeckSettings(deckId).fx ?? { kind: null, amount: 0 },
+  )
+  const fxRef = useRef(fx)
   const [primed, setPrimedState] = useState(false)
   const primedRef = useRef(primed)
 
@@ -70,7 +81,12 @@ export function useDeck(deckId: DeckId): DeckControls {
       channelPromiseRef.current = engine
         .createDeckChannel(
           deckId,
-          { volume: volumeRef.current, eq: eqRef.current, cue: cueRef.current },
+          {
+            volume: volumeRef.current,
+            eq: eqRef.current,
+            cue: cueRef.current,
+            fx: fxRef.current,
+          },
           (stats) => dispatch({ type: 'worklet_stats', stats }),
         )
         .then((channel) => {
@@ -245,6 +261,29 @@ export function useDeck(deckId: DeckId): DeckControls {
     channelRef.current?.setCue(on)
   }, [])
 
+  const setFx = useCallback(
+    (kind: FxKind | null) => {
+      const next = { kind, amount: kind ? fxRestPosition(kind) : 0 }
+      setFxState(next)
+      fxRef.current = next
+      updateDeckSettings(deckId, { fx: next })
+      channelRef.current?.setFx(kind)
+      channelRef.current?.setFxAmount(next.amount)
+    },
+    [deckId],
+  )
+
+  const setFxAmount = useCallback(
+    (amount: number) => {
+      const next = { ...fxRef.current, amount }
+      setFxState(next)
+      fxRef.current = next
+      updateDeckSettings(deckId, { fx: next })
+      channelRef.current?.setFxAmount(amount)
+    },
+    [deckId],
+  )
+
   const setEqBand = useCallback(
     (band: EqBand, value: number) => {
       const next = { ...eqRef.current, [band]: value }
@@ -262,6 +301,9 @@ export function useDeck(deckId: DeckId): DeckControls {
     eq,
     cue,
     setCue,
+    fx,
+    setFx,
+    setFxAmount,
     primed,
     prime,
     play,

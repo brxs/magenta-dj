@@ -18,6 +18,8 @@
  */
 
 import { EQ_BANDS, EQ_FILTERS, eqValueToDb, type EqBand } from './eq'
+import { fxBlend, isFxActive, type FxKind } from './fx'
+import { buildFxGraph, type FxGraph } from './fxGraphs'
 import { rangeFromBytes, rmsFromBytes } from './levels'
 import { encodeWav, floatToInt16 } from './wav'
 
@@ -30,6 +32,11 @@ export type DeckChannel = {
   setEq: (band: EqBand, value: number) => void
   /** Feed this channel (post-EQ, pre-fader) into the headphone cue bus. */
   setCue: (on: boolean) => void
+  /** Swap the Color FX insert's effect; null removes it (M12). */
+  setFx: (kind: FxKind | null) => void
+  /** Knob position for the active effect; inside the effect's dead zone
+   * the insert is bit-transparently bypassed (ADR-0008). */
+  setFxAmount: (amount: number) => void
   /** Off-air mutes the channel's master feed only — generation, meters,
    * and the cue tap stay live. The primed-deck state (M10). */
   setOnAir: (on: boolean) => void
@@ -49,7 +56,12 @@ export type StatsHandler = (stats: {
 export type AudioEngine = {
   createDeckChannel: (
     deckId: DeckId,
-    initial: { volume: number; eq: Record<EqBand, number>; cue: boolean },
+    initial: {
+      volume: number
+      eq: Record<EqBand, number>
+      cue: boolean
+      fx: { kind: FxKind | null; amount: number }
+    },
     onStats: StatsHandler,
   ) => Promise<DeckChannel>
   resume: () => Promise<void>
@@ -226,13 +238,57 @@ export function createAudioEngine(): AudioEngine {
         head.connect(eqNodes[band])
         head = eqNodes[band]
       }
+      // Color FX insert (M12, ADR-0008): a parallel pair — unity dry
+      // branch and the active effect's graph — summed into `post`, the
+      // point both the cue tap and the fader read, so the phones preview
+      // effects. Inside the effect's dead zone the wet gain is exactly 0
+      // and the dry exactly 1: bit-transparent bypass.
+      const fxDry = bus.context.createGain()
+      const fxSend = bus.context.createGain()
+      const fxWet = bus.context.createGain()
+      fxWet.gain.value = 0
+      const post = bus.context.createGain()
+      head.connect(fxDry)
+      fxDry.connect(post)
+      head.connect(fxSend)
+      fxWet.connect(post)
+      let fxKind: FxKind | null = null
+      let fxAmount = 0
+      let fxGraph: FxGraph | null = null
+      function applyFx() {
+        const time = bus.context.currentTime
+        const active = fxKind !== null && isFxActive(fxKind, fxAmount)
+        const dryTarget =
+          !active || fxBlend(fxKind as FxKind) === 'add' ? 1 : 0
+        fxDry.gain.setTargetAtTime(dryTarget, time, PARAM_RAMP_SECONDS)
+        fxWet.gain.setTargetAtTime(active ? 1 : 0, time, PARAM_RAMP_SECONDS)
+        fxGraph?.apply(fxAmount, time)
+      }
+      function swapFx(kind: FxKind | null) {
+        if (kind === fxKind) return
+        if (fxGraph) {
+          fxSend.disconnect()
+          fxGraph.dispose()
+          fxGraph = null
+        }
+        fxKind = kind
+        if (kind) {
+          fxGraph = buildFxGraph(bus.context, kind)
+          fxSend.connect(fxGraph.input)
+          fxGraph.output.connect(fxWet)
+        }
+        applyFx()
+      }
+      fxAmount = initial.fx.amount
+      swapFx(initial.fx.kind)
+
       const cueToggle = bus.context.createGain()
       cueToggle.gain.value = initial.cue ? 1 : 0
-      head.connect(cueToggle)
+      post.connect(cueToggle)
       cueToggle.connect(bus.cueBus)
       const volume = bus.context.createGain()
       volume.gain.value = initial.volume
-      head.connect(volume)
+      post.connect(volume)
       const onAir = bus.context.createGain()
       volume.connect(onAir)
       onAir.connect(bus.crossfade[deckId])
@@ -270,6 +326,13 @@ export function createAudioEngine(): AudioEngine {
             PARAM_RAMP_SECONDS,
           )
         },
+        setFx(kind) {
+          swapFx(kind)
+        },
+        setFxAmount(amount) {
+          fxAmount = amount
+          applyFx()
+        },
         setOnAir(on) {
           onAir.gain.setTargetAtTime(
             on ? 1 : 0,
@@ -288,6 +351,8 @@ export function createAudioEngine(): AudioEngine {
           worklet.port.onmessage = null
           worklet.disconnect()
           for (const band of EQ_BANDS) eqNodes[band].disconnect()
+          fxGraph?.dispose()
+          for (const node of [fxDry, fxSend, fxWet, post]) node.disconnect()
           cueToggle.disconnect()
           volume.disconnect()
           onAir.disconnect()

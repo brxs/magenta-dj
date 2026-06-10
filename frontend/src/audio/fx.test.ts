@@ -5,6 +5,7 @@ import {
   dubEchoCurve,
   FX_KINDS,
   filterCurve,
+  fxBlend,
   fxRestPosition,
   isFxActive,
   noiseCurve,
@@ -33,6 +34,15 @@ describe('rest positions and the dead zone', () => {
   it('clamps out-of-range amounts', () => {
     expect(isFxActive('space', -1)).toBe(false)
     expect(isFxActive('space', 2)).toBe(true)
+  })
+
+  it('classifies replace vs additive blends', () => {
+    expect(fxBlend('filter')).toBe('replace')
+    expect(fxBlend('crush')).toBe('replace')
+    expect(fxBlend('sweep')).toBe('replace')
+    expect(fxBlend('dub_echo')).toBe('add')
+    expect(fxBlend('space')).toBe('add')
+    expect(fxBlend('noise')).toBe('add')
   })
 })
 

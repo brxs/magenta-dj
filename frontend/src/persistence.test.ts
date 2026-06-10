@@ -30,6 +30,20 @@ describe('persistence', () => {
     expect(loadDeckSettings('b').volume).toBe(0.9)
   })
 
+  it('round-trips deck FX and drops malformed kinds', () => {
+    updateDeckSettings('a', { fx: { kind: 'filter', amount: 0.5 } })
+    expect(loadDeckSettings('a').fx).toEqual({ kind: 'filter', amount: 0.5 })
+
+    updateDeckSettings('a', { fx: { kind: null, amount: 0 } })
+    expect(loadDeckSettings('a').fx).toEqual({ kind: null, amount: 0 })
+
+    localStorage.setItem(
+      'magenta-dj:v1',
+      JSON.stringify({ decks: { a: { fx: { kind: 'megaverb', amount: 2 } } } }),
+    )
+    expect(loadDeckSettings('a').fx).toBeUndefined()
+  })
+
   it('round-trips and clamps deck EQ', () => {
     updateDeckSettings('a', { eq: { low: 0, mid: 0.5, high: 1 } })
     expect(loadDeckSettings('a').eq).toEqual({ low: 0, mid: 0.5, high: 1 })

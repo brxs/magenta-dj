@@ -139,3 +139,45 @@ class PCMRecorder extends AudioWorkletProcessor {
 }
 
 registerProcessor('pcm-recorder', PCMRecorder);
+
+// Bit crusher (roadmap M12): quantises to a bit depth and sample-holds
+// across `reduction` frames. Parameters arrive as port messages
+// {bits, reduction}; at the transparent settings (16 bits, hold 1) the
+// stream passes through unchanged.
+
+class BitCrusher extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this.bits = 16;
+    this.reduction = 1;
+    this.counter = 0;
+    this.held = [0, 0];
+    this.port.onmessage = (event) => {
+      this.bits = event.data.bits;
+      this.reduction = event.data.reduction;
+    };
+  }
+
+  process(inputs, outputs) {
+    const input = inputs[0];
+    const output = outputs[0];
+    if (!input || input.length === 0) return true;
+    const levels = Math.pow(2, this.bits - 1);
+    const frames = output[0].length;
+    for (let i = 0; i < frames; i++) {
+      if (this.counter === 0) {
+        for (let ch = 0; ch < output.length; ch++) {
+          const sample = (input[ch] ?? input[0])[i];
+          this.held[ch] = Math.round(sample * levels) / levels;
+        }
+      }
+      this.counter = (this.counter + 1) % this.reduction;
+      for (let ch = 0; ch < output.length; ch++) {
+        output[ch][i] = this.held[ch];
+      }
+    }
+    return true;
+  }
+}
+
+registerProcessor('bit-crusher', BitCrusher);

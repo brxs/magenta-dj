@@ -3,6 +3,7 @@
 
 import type { DeckId } from './audio/engine'
 import { EQ_BANDS, type EqBand } from './audio/eq'
+import { FX_KINDS, type FxKind } from './audio/fx'
 import type { AudioOutputDevice } from './audio/outputs'
 import type { PadPoint } from './deck/padWeights'
 
@@ -11,6 +12,7 @@ export type DeckSettings = {
   cursor: PadPoint
   volume: number
   eq: Record<EqBand, number>
+  fx: { kind: FxKind | null; amount: number }
 }
 
 export type AppSettings = {
@@ -89,6 +91,15 @@ export function loadDeckSettings(deckId: DeckId): Partial<DeckSettings> {
     settings.eq = Object.fromEntries(
       EQ_BANDS.map((band) => [band, clamp01(eq[band] as number)]),
     ) as Record<EqBand, number>
+  }
+  const fx = stored.fx
+  if (
+    fx &&
+    typeof fx === 'object' &&
+    (fx.kind === null || FX_KINDS.includes(fx.kind as FxKind)) &&
+    Number.isFinite(fx.amount)
+  ) {
+    settings.fx = { kind: fx.kind, amount: clamp01(fx.amount as number) }
   }
   return settings
 }
