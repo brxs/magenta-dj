@@ -234,6 +234,37 @@ describe('useDeck connection', () => {
     expect(result.current.volume).toBe(0.55)
   })
 
+  it('primes off air and drops on air without flushing the prepped buffer', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+
+    await act(() => result.current.prime())
+    expect(channel.setOnAir).toHaveBeenLastCalledWith(false)
+    expect(result.current.primed).toBe(true)
+    expect(socket(0).sent).toEqual([JSON.stringify({ type: 'play' })])
+
+    vi.mocked(channel.reset).mockClear()
+    await act(() => result.current.play())
+    expect(channel.setOnAir).toHaveBeenLastCalledWith(true)
+    expect(result.current.primed).toBe(false)
+    // The drop must not flush the prepped audio or re-send play.
+    expect(channel.reset).not.toHaveBeenCalled()
+    expect(socket(0).sent).toEqual([JSON.stringify({ type: 'play' })])
+  })
+
+  it('stop while primed flushes and puts the channel back on air', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+
+    await act(() => result.current.prime())
+    act(() => result.current.stop())
+    expect(result.current.primed).toBe(false)
+    expect(channel.reset).toHaveBeenCalled()
+    expect(channel.setOnAir).toHaveBeenLastCalledWith(true)
+  })
+
   it('seeds a pre-play cue toggle into the channel and routes live ones', async () => {
     const { engine, channel } = makeFakeEngine()
     const { result } = renderDeck(engine)

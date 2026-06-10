@@ -22,6 +22,10 @@ export type DeckControls = {
    * a reload never blasts the phones unexpectedly. */
   cue: boolean
   setCue: (on: boolean) => void
+  /** Generating but off air (M10): buffer fills, only the cue tap hears
+   * it. play() then drops it on air without flushing what was built up. */
+  primed: boolean
+  prime: () => Promise<void>
   play: () => Promise<void>
   stop: () => void
   setStyle: (style: ActiveStyle) => void
@@ -47,6 +51,13 @@ export function useDeck(deckId: DeckId): DeckControls {
   const eqRef = useRef(eq)
   const [cue, setCueState] = useState(false)
   const cueRef = useRef(cue)
+  const [primed, setPrimedState] = useState(false)
+  const primedRef = useRef(primed)
+
+  const setPrimed = useCallback((next: boolean) => {
+    setPrimedState(next)
+    primedRef.current = next
+  }, [])
 
   const socketRef = useRef<WebSocket | null>(null)
   const channelRef = useRef<DeckChannel | null>(null)
@@ -133,12 +144,20 @@ export function useDeck(deckId: DeckId): DeckControls {
   }, [])
 
   const play = useCallback(async () => {
+    // Dropping a primed deck on air: the worker already streams and the
+    // buffer holds the prepped audio — unmute, don't flush or replay.
+    if (primedRef.current) {
+      channelRef.current?.setOnAir(true)
+      setPrimed(false)
+      return
+    }
     try {
       const channel = await ensureChannel()
       await engine.resume()
       // Drop whatever an earlier session left in the ring buffer, so the
       // first thing heard is the new stream, not stale chunks.
       channel.reset()
+      channel.setOnAir(true)
     } catch (error) {
       dispatch({
         type: 'local_error',
@@ -148,15 +167,39 @@ export function useDeck(deckId: DeckId): DeckControls {
     }
     send({ type: 'play' })
     dispatch({ type: 'play_requested' })
-  }, [ensureChannel, engine, send])
+  }, [ensureChannel, engine, send, setPrimed])
+
+  /** Start generating off air: like play(), but muted on the master so
+   * the prep is only audible over the cue tap (M10 transport CUE). */
+  const prime = useCallback(async () => {
+    if (primedRef.current) return
+    try {
+      const channel = await ensureChannel()
+      await engine.resume()
+      channel.reset()
+      channel.setOnAir(false)
+    } catch (error) {
+      dispatch({
+        type: 'local_error',
+        error: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+    setPrimed(true)
+    send({ type: 'play' })
+    dispatch({ type: 'play_requested' })
+  }, [ensureChannel, engine, send, setPrimed])
 
   const stop = useCallback(() => {
     send({ type: 'stop' })
     // Flush instead of letting the buffered seconds play out, so stop is
-    // immediate like a DJ expects.
+    // immediate like a DJ expects. The empty channel goes back on air so
+    // the next plain play() isn't silent.
     channelRef.current?.reset()
+    channelRef.current?.setOnAir(true)
+    setPrimed(false)
     dispatch({ type: 'stop_requested' })
-  }, [send])
+  }, [send, setPrimed])
 
   const setStyle = useCallback(
     (style: ActiveStyle) => {
@@ -219,6 +262,8 @@ export function useDeck(deckId: DeckId): DeckControls {
     eq,
     cue,
     setCue,
+    primed,
+    prime,
     play,
     stop,
     setStyle,

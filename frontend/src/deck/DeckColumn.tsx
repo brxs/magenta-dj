@@ -67,6 +67,8 @@ type DeckColumnProps = {
   onRestart: () => void
   /** Reports how many style targets exist (for the pad LED echo). */
   onTargetCount?: (count: number) => void
+  /** Generating off air (M10 deck prep) — surfaced in the status line. */
+  primed?: boolean
 }
 
 export function DeckColumn({
@@ -79,6 +81,7 @@ export function DeckColumn({
   onSetModel,
   onRestart,
   onTargetCount,
+  primed = false,
 }: DeckColumnProps) {
   const { t } = useTranslation()
   const [targets, setTargets] = useState<(PadPoint & { text: string })[]>(
@@ -94,11 +97,13 @@ export function DeckColumn({
   const operable = isDeckOperable(state)
   const statusKey = state.switchingModel
     ? 'deck.status.loadingModel'
-    : {
-        connecting: 'deck.status.connecting',
-        open: 'deck.status.connected',
-        closed: 'deck.status.disconnected',
-      }[state.connection]
+    : primed && connected
+      ? 'deck.status.primed'
+      : {
+          connecting: 'deck.status.connecting',
+          open: 'deck.status.connected',
+          closed: 'deck.status.disconnected',
+        }[state.connection]
   const bufferFraction = state.bufferedSeconds / BUFFER_TARGET_SECONDS
   const bufferTone =
     !state.playing || bufferFraction >= 0.5 ? 'ok' : bufferFraction >= 0.25 ? 'warn' : 'danger'

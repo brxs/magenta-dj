@@ -70,7 +70,8 @@
       "connecting": "Connecting…",
       "connected": "Connected",
       "disconnected": "Disconnected — retrying",
-      "loadingModel": "Loading model…"
+      "loadingModel": "Loading model…",
+      "primed": "Primed — off air"
     },
     "health": {
       "buffer": "Buffer",

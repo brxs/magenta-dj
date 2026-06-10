@@ -168,6 +168,7 @@ function App() {
           onSetModel={deckA.setModel}
           onRestart={deckA.restartWorker}
           onTargetCount={handleTargetCountA}
+          primed={deckA.primed}
         />
         <MixerStrip
           channels={channels}
@@ -188,6 +189,7 @@ function App() {
           onSetModel={deckB.setModel}
           onRestart={deckB.restartWorker}
           onTargetCount={handleTargetCountB}
+          primed={deckB.primed}
         />
       </div>
     </main>

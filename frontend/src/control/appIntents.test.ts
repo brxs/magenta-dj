@@ -11,6 +11,8 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     eq: { low: 0.5, mid: 0.5, high: 0.5 },
     cue: false,
     setCue: vi.fn(),
+    primed: false,
+    prime: vi.fn(async () => {}),
     play: vi.fn(async () => {}),
     stop: vi.fn(),
     setStyle: vi.fn(),
