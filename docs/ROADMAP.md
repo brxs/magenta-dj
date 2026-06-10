@@ -129,7 +129,29 @@ Scope:
 **Exit criteria:** record a 5-minute mix to WAV that matches what was heard;
 close/reopen the app and pick up previous settings.
 
-## M6 — Hardware control: Pioneer DDJ-FLX4 over Web MIDI
+## M6 — Deck EQ: Hi / Mid / Low
+
+**Goal:** cut and boost frequency bands per deck like a DJ mixer — kill the
+lows on the incoming deck, swap basslines across the crossfade.
+
+Scope:
+
+- Three BiquadFilterNodes per deck channel in the audio engine
+  (ADR-0003's graph grows to: worklet → low shelf (~250 Hz) → mid peaking
+  (~1 kHz) → high shelf (~2.5 kHz) → volume → crossfade). Pure, tested
+  knob-value → dB curve: centre = flat (0 dB), top = +6 dB boost, bottom =
+  full kill (−40 dB).
+- Three per-deck EQ controls in the UI (design-system sliders), persisted
+  like volume, restored on reload.
+- Spectral verification, not vibes: the e2e records the master bus with
+  LOW killed vs. flat on a playing deck and asserts the low-band energy
+  drop in the WAV (the M5 harness already parses recordings).
+
+**Exit criteria:** killing a band audibly (and measurably, in the recorded
+spectrum) removes it while the other deck is unaffected; EQ settings
+survive a reload.
+
+## M7 — Hardware control: Pioneer DDJ-FLX4 over Web MIDI
 
 **Goal:** perform on physical hardware — the FLX4's surface drives the
 decks, mixer, and style pads without touching the mouse. Architecture in
@@ -152,9 +174,11 @@ Scope, ordered by risk:
    - channel faders → deck volumes; crossfader → master crossfade
      (14-bit MSB/LSB pairs)
    - PLAY/PAUSE per deck → play/stop
+   - EQ HI/MID/LOW knobs → the M6 deck EQ bands (what a DJ expects)
    - performance pads 1–8 → snap the style-pad cursor to target N
      (cue points for prompts)
-   - two EQ knobs per deck → style-pad cursor X/Y (continuous morph)
+   - SMART CFX knob → sweep the style-pad cursor around the target
+     circle (continuous morph; pads snap, the knob glides)
    - BEAT FX ON/OFF → record toggle
    - tempo sliders deliberately unmapped (ADR-0004); jog wheels unmapped
      in v1
@@ -162,9 +186,9 @@ Scope, ordered by risk:
    MIDI out through the same module.
 
 **Exit criteria:** with a DDJ-FLX4 connected, start/stop both decks, ride
-the channel faders and crossfader, jump and morph styles from the pads and
-knobs — hands off the mouse, with every hardware move reflected live in
-the UI. Verified with the physical device against a written checklist
+the channel faders, EQs, and crossfader, jump styles from the pads and
+morph with the CFX knob — hands off the mouse, with every hardware move
+reflected live in the UI. Verified with the physical device against a written checklist
 (hardware cannot be e2e-automated), plus unit tests for the full mapping
 table.
 
@@ -176,7 +200,7 @@ Ideas parked deliberately — each would get its own ADR if picked up:
   ADR-0002.
 - **C++ engine (`magentart::core`) backend** — single distributable binary,
   supersedes ADR-0002 if pursued.
-- **Controller LED/display feedback beyond M6's stretch** — full
+- **Controller LED/display feedback beyond M7's stretch** — full
   bidirectional surface state (requires the FLX4 output map).
 - **Audio-prompt styles** — MRT styles can come from reference audio, not just
   text: "make deck B sound like this track".
