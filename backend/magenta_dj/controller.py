@@ -30,7 +30,9 @@ logger = logging.getLogger(__name__)
 # so this only fills if nobody is consuming. Status messages share the queue,
 # hence the factor of 2.
 OUT_QUEUE_CHUNKS = 6
-PUMP_POLL_SECONDS = 0.2
+# Idle sleep between non-blocking queue polls; bounds added forwarding
+# latency (chunks are 1s, clients prebuffer 1.5s).
+PUMP_POLL_SECONDS = 0.05
 
 DECK_IDS = ("a", "b")
 DEFAULT_MODEL = "mrt2_small"
@@ -307,9 +309,13 @@ async def _pump_worker_output(deck: DeckProcess, websocket: WebSocket) -> None:
     death_reported = False
     while True:
         try:
-            kind, payload = await asyncio.to_thread(
-                deck.out_queue.get, True, PUMP_POLL_SECONDS
-            )
+            # Non-blocking read + async sleep, NOT a blocking get() in a
+            # thread: a cancelled to_thread leaves its thread blocked on the
+            # queue for the rest of the timeout, and that zombie consumes —
+            # and discards — whatever the worker emits next. With a fast
+            # reconnect (page reload) it ate the fresh session's first
+            # style_applied echo.
+            kind, payload = deck.out_queue.get_nowait()
         except queue.Empty:
             alive = deck.restarting or deck.process.is_alive()
             if alive:
@@ -319,6 +325,7 @@ async def _pump_worker_output(deck: DeckProcess, websocket: WebSocket) -> None:
                 await websocket.send_text(
                     json.dumps({"event": "worker_died", "model": deck.model})
                 )
+            await asyncio.sleep(PUMP_POLL_SECONDS)
             continue
         if kind == "audio":
             await websocket.send_bytes(payload)
