@@ -12,6 +12,12 @@ channel 1 (`0x91`/`0xB1`), mixer channel 6 (`0xB6`), pads channels 7/9
 velocity `0x7F` on press, `0x00` on release. Faders/knobs are 14-bit: MSB
 on the listed CC, LSB on CC+`0x20`.
 
+Position sync: knobs and faders are silent until moved. SysEx
+`F0 00 40 05 00 00 04 05 00 50 02 F7` (from the Mixxx FLX4 script,
+reverse-engineered with Wireshark; doubles as its keep-alive) makes the
+controller report every analog control's current position — the app
+sends it on every device bind so a fresh connection starts in sync.
+
 ## Mapped in M7
 
 | Control | Message | → App intent |

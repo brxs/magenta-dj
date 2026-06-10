@@ -37,6 +37,7 @@ describe('useMidi pad LEDs', () => {
 
     act(() => result.current.connect())
     await waitFor(() => expect(result.current.status).toBe('connected'))
+    send.mockClear() // drop the bind-time position query
 
     act(() => result.current.setPadLeds('a', 2))
     expect(send.mock.calls.map((call) => call[0])).toEqual([

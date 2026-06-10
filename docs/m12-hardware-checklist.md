@@ -63,6 +63,10 @@ first:
 
 ## Integration
 
+- [ ] **Position sync on connect**: park EQ MID deck 1 fully left and
+      the channel fader low, reload the page, Connect MIDI — the
+      on-screen EQ knob, fader, and CFX positions snap to the hardware
+      without touching anything (the status-query SysEx).
 - [ ] The on-screen FX amount knob follows the hardware knob live.
 - [ ] SHIFT + SMART CFX sweeps the style cursor around the circle (the
       M7 behaviour, now on the chord) and never touches the FX amount;

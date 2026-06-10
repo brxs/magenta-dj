@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createMidiLink, type MidiStatus } from './midi'
+import { createMidiLink, FLX4_STATUS_QUERY, type MidiStatus } from './midi'
 
 type FakePort = {
   name: string
@@ -120,6 +120,27 @@ describe('createMidiLink', () => {
     access.onstatechange?.()
     expect(statuses.at(-1)).toEqual(['no-device', null])
     expect(flx4.onmidimessage).toBeNull()
+  })
+
+  it('queries current control positions whenever the device binds', async () => {
+    const flx4Out = fakePort('DDJ-FLX4')
+    const access = fakeAccess([fakePort('DDJ-FLX4')], [flx4Out])
+    const { link } = createLink(access)
+    await link.connect()
+    // Knobs only report when moved; the query makes the controller dump
+    // its current positions so the app syncs on connect.
+    expect(flx4Out.send).toHaveBeenCalledWith(FLX4_STATUS_QUERY)
+
+    // A replug re-syncs too.
+    flx4Out.send.mockClear()
+    access.onstatechange?.()
+    expect(flx4Out.send).toHaveBeenCalledWith(FLX4_STATUS_QUERY)
+  })
+
+  it('skips the position query when only an input is present', async () => {
+    const { link, statuses } = createLink(fakeAccess([fakePort('DDJ-FLX4')]))
+    await expect(link.connect()).resolves.toBeUndefined()
+    expect(statuses.at(-1)).toEqual(['connected', 'DDJ-FLX4'])
   })
 
   it('sends LED bytes to the matching output only', async () => {
