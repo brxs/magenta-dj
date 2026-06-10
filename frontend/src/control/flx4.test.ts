@@ -39,10 +39,26 @@ describe('createFlx4Translator', () => {
       }
     })
 
-    it('ignores pad notes outside the eight HOT CUE slots', () => {
+    it('ignores pad notes outside the mapped banks', () => {
       const translate = createFlx4Translator()
       expect(translate([0x97, 0x08, PRESS])).toBeNull()
-      expect(translate([0x99, 0x20, PRESS])).toBeNull()
+      expect(translate([0x99, 0x20, PRESS])).toBeNull() // BEAT JUMP bank
+      expect(translate([0x99, 0x18, PRESS])).toBeNull() // past PAD FX
+    })
+
+    it.each([
+      [0x97, 'a'],
+      [0x99, 'b'],
+    ] as const)('PAD FX pads on %s select deck %s effects', (status, deck) => {
+      const translate = createFlx4Translator()
+      for (let pad = 0; pad < 8; pad++) {
+        expect(translate([status, 0x10 + pad, PRESS])).toEqual({
+          kind: 'fx_select',
+          deck,
+          index: pad,
+        })
+      }
+      expect(translate([status, 0x10, RELEASE])).toBeNull()
     })
 
     it('ignores the shift pad layer', () => {

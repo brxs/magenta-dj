@@ -42,6 +42,25 @@ position must return the stream to exactly its dry self:
 - [ ] **Sweep** — pumping starts slow and shallow, gets faster and
       deeper; zero stops the motion completely.
 
+## PAD FX mode: effect selection from the pads
+
+The bank base (`0x97`/`0x99` notes `0x10`–`0x17`) is interpolated from
+the firmware's 0x10-per-bank scheme, not read from a chart — verify it
+first:
+
+- [ ] Switch the pads to **PAD FX** mode and press pad 1: the monitor
+      shows `97 10 7F` (deck 1) / `99 10 7F` (deck 2). If a different
+      note range appears, stop and record it.
+- [ ] Pads 1–6 select Filter, Dub Echo, Space, Crush, Noise, Sweep in
+      order; the on-screen Effect picker follows.
+- [ ] The selected effect's pad is lit; selecting another moves the
+      light; pads 7–8 do nothing.
+- [ ] Pressing the lit pad switches the effect off (pad goes dark, the
+      picker shows Off).
+- [ ] Selecting an effect parks the knob at its rest position — never
+      mid-effect.
+- [ ] Each deck's pads drive only their own deck.
+
 ## Integration
 
 - [ ] The on-screen FX amount knob follows the hardware knob live.

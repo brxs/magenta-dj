@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { INITIAL_CROSSFADE, INITIAL_CUE_MIX, type DeckId } from './audio/engine'
 import { startCueStream } from './audio/cueStream'
 import { useAudioEngine } from './audio/engineContext'
+import { FX_KINDS } from './audio/fx'
 import type { AudioOutputDevice } from './audio/outputs'
 import { applyAppIntent } from './control/appIntents'
 import { useControlBus } from './control/busContext'
@@ -140,7 +141,7 @@ function App() {
   )
 
   const midi = useMidi()
-  const { status: midiStatus, setLed, setPadLeds } = midi
+  const { status: midiStatus, setLed, setPadLeds, setFxPadLeds } = midi
   const [padCounts, setPadCounts] = useState<Record<DeckId, number>>({
     a: 0,
     b: 0,
@@ -166,6 +167,13 @@ function App() {
     setPadLeds('a', padCounts.a)
     setPadLeds('b', padCounts.b)
   }, [midiStatus, setPadLeds, padCounts])
+
+  // PAD FX bank LEDs (M12): the active effect's pad lit per deck.
+  useEffect(() => {
+    if (midiStatus !== 'connected') return
+    setFxPadLeds('a', deckA.fx.kind ? FX_KINDS.indexOf(deckA.fx.kind) : null)
+    setFxPadLeds('b', deckB.fx.kind ? FX_KINDS.indexOf(deckB.fx.kind) : null)
+  }, [midiStatus, setFxPadLeds, deckA.fx.kind, deckB.fx.kind])
 
   // Cue LEDs (M10): channel CUE mirrors the headphone-cue toggles,
   // transport CUE lights while a deck is primed off air.

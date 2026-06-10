@@ -122,6 +122,26 @@ describe('applyAppIntent', () => {
     expect(a.setFxAmount).not.toHaveBeenCalled()
   })
 
+  it('selects an effect from a PAD FX pad and toggles it off on repeat', () => {
+    const a = fakeDeck()
+    applyAppIntent({ kind: 'fx_select', deck: 'a', index: 1 }, decks(a), noHandlers)
+    expect(a.setFx).toHaveBeenCalledWith('dub_echo')
+
+    const echoed = { ...fakeDeck(), fx: { kind: 'dub_echo' as const, amount: 0.4 } }
+    applyAppIntent(
+      { kind: 'fx_select', deck: 'a', index: 1 },
+      decks(echoed),
+      noHandlers,
+    )
+    expect(echoed.setFx).toHaveBeenCalledWith(null)
+  })
+
+  it('ignores PAD FX pads beyond the effect list', () => {
+    const a = fakeDeck()
+    applyAppIntent({ kind: 'fx_select', deck: 'a', index: 7 }, decks(a), noHandlers)
+    expect(a.setFx).not.toHaveBeenCalled()
+  })
+
   it('hands crossfade to the callback', () => {
     const onCrossfade = vi.fn()
     applyAppIntent(

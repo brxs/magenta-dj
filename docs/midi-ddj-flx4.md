@@ -24,6 +24,7 @@ on the listed CC, LSB on CC+`0x20`.
 | EQ MID deck 1 / 2 | `0xB0`/`0xB1` CC `0x0B` (LSB `0x2B`) | deck EQ mid band (M6) |
 | EQ LOW deck 1 / 2 | `0xB0`/`0xB1` CC `0x0F` (LSB `0x2F`) | deck EQ low band (M6) |
 | SMART CFX deck 1 / 2 | `0xB6` CC `0x17`/`0x18` (LSB `0x37`/`0x38`) | Color FX amount (M12); with SHIFT held: sweep style-pad cursor |
+| Pads 1–6, PAD FX mode, deck 1 / 2 | `0x97`/`0x99` notes `0x10`–`0x15` | select that deck's Color FX; the active pad re-pressed switches off; LED echoes the selection (M12). Bank base interpolated from the 0x10-per-bank scheme — confirm with the monitor |
 | SHIFT deck 1 / 2 | `0x90`/`0x91` note `0x3F` | modifier, tracked in software (M12) — press/release only, no intent of its own |
 | BEAT FX ON/OFF | `0x94`/`0x95` note `0x47` | record toggle |
 

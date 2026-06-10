@@ -36,6 +36,10 @@ export const TRANSPORT_CUE_NOTE = 0x0c
  * state is tracked here per deck. */
 export const SHIFT_NOTE = 0x3f
 export const PAD_COUNT = 8
+/** PAD FX1 bank. Interpolated from the firmware's 0x10-per-bank scheme
+ * (HOT CUE 0x00, BEAT JUMP 0x20, SAMPLER 0x30, KEYBOARD 0x40, BEAT
+ * LOOP 0x60 are all confirmed) — the monitor verifies it on hardware. */
+export const PAD_FX_NOTE_BASE = 0x10
 
 const CC_DECK: Partial<Record<number, DeckId>> = { 0xb0: 'a', 0xb1: 'b' }
 const MIXER_STATUS = 0xb6
@@ -96,6 +100,13 @@ function buttonIntent(status: number, note: number): ControlIntent | null {
   const padDeck = PAD_DECK[status]
   if (padDeck && note < PAD_COUNT) {
     return { kind: 'style_target', deck: padDeck, index: note }
+  }
+  if (
+    padDeck &&
+    note >= PAD_FX_NOTE_BASE &&
+    note < PAD_FX_NOTE_BASE + PAD_COUNT
+  ) {
+    return { kind: 'fx_select', deck: padDeck, index: note - PAD_FX_NOTE_BASE }
   }
   if (BEAT_FX_STATUSES.includes(status) && note === RECORD_NOTE) {
     return { kind: 'record_toggle' }

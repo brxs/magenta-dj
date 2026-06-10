@@ -61,6 +61,32 @@ describe('useMidi pad LEDs', () => {
     expect(() => result.current.setPadLeds('a', 3)).not.toThrow()
   })
 
+  it('lights only the active effect pad in the PAD FX bank', async () => {
+    const send = vi.fn()
+    stubMidiAccess(send)
+    const { result } = renderHook(() => useMidi(), { wrapper })
+    act(() => result.current.connect())
+    await waitFor(() => expect(result.current.status).toBe('connected'))
+
+    send.mockClear()
+    result.current.setFxPadLeds('a', 1)
+    expect(send.mock.calls.map((call) => call[0])).toEqual([
+      [0x97, 0x10, 0x00],
+      [0x97, 0x11, 0x7f],
+      [0x97, 0x12, 0x00],
+      [0x97, 0x13, 0x00],
+      [0x97, 0x14, 0x00],
+      [0x97, 0x15, 0x00],
+      [0x97, 0x16, 0x00],
+      [0x97, 0x17, 0x00],
+    ])
+
+    send.mockClear()
+    result.current.setFxPadLeds('b', null)
+    expect(send.mock.calls.every(([bytes]) => bytes[2] === 0)).toBe(true)
+    expect(send.mock.calls[0][0][0]).toBe(0x99)
+  })
+
   it('echoes single-button LEDs with on/off velocities', async () => {
     const send = vi.fn()
     stubMidiAccess(send)
