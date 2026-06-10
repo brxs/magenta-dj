@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import { INITIAL_CROSSFADE } from './audio/engine'
 import { useAudioEngine } from './audio/engineContext'
+import { MidiControls } from './control/MidiControls'
 import { DeckColumn } from './deck/DeckColumn'
 import { useDeck } from './deck/useDeck'
 import { MixerStrip, type ChannelControls } from './mixer/MixerStrip'
@@ -69,6 +70,7 @@ function App() {
           </p>
         )}
         <p className="app__hint">{t('app.shortcutsHint')}</p>
+        <MidiControls />
       </header>
       <div className="app__booth">
         <DeckColumn
