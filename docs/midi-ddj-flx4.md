@@ -60,6 +60,14 @@ remains the verification tool.
 | Pads 1–4, SAMPLER mode, deck 1 / 2 | `0x97`/`0x99` notes `0x30`–`0x33` | freeze-loop slot: empty captures + freezes, filled swaps in, active returns to live; LED lit while filled. Bank base `0x30` confirmed by the 0x10-per-bank scheme |
 | SHIFT + SAMPLER pad, deck 1 / 2 | `0x98`/`0x9A` notes `0x30`–`0x33` | clear the slot. Held SHIFT moves pads onto the shift pad layer — pads are **not** soft-shifted like the CFX knob (found on hardware: the `0x97`/`0x99` soft-shift path never fired). The translator keeps the soft-shift rows as well, in case other firmware keeps the pads put |
 
+## Mapped in M16 (crates)
+
+| Control | Message | → App intent |
+| ------- | ------- | ------------ |
+| Browse rotary (turn) | `0xB6` CC `0x40`, relative (small = CW, >`0x40` = CCW two's complement) | move the crate highlight — handled before the 14-bit CC pipeline; confirm direction with the monitor |
+| LOAD deck 1 / 2 | `0x96` notes `0x46`/`0x47` | load the highlighted preset onto that deck |
+| Browse rotary (press) | unmapped | the Mixxx chart defines no press control; nothing to bind |
+
 On audio: the FLX4's USB sound card exposes 4 output channels at 48 kHz
 (measured via `system_profiler`) — 1/2 feed the MASTER RCA, 3/4 the
 headphone jack — but Chromium caps Web Audio output at stereo per sink,

@@ -271,6 +271,43 @@ describe('createFlx4Translator', () => {
       })
     })
 
+    it('translates browse-rotary ticks as relative scrolls', () => {
+      const translate = createFlx4Translator()
+      expect(translate([0xb6, 0x40, 0x01])).toEqual({
+        kind: 'crate_scroll',
+        direction: 1,
+      })
+      expect(translate([0xb6, 0x40, 0x02])).toEqual({
+        kind: 'crate_scroll',
+        direction: 1,
+      })
+      expect(translate([0xb6, 0x40, 0x7f])).toEqual({
+        kind: 'crate_scroll',
+        direction: -1,
+      })
+      expect(translate([0xb6, 0x40, 0x00])).toBeNull()
+    })
+
+    it('browse ticks never pollute the 14-bit MSB cache', () => {
+      const translate = createFlx4Translator()
+      translate([0xb6, 0x40, 0x01]) // rotary tick
+      // CC 0x60 would be 0x40's LSB if the rotary were treated as an
+      // MSB; it must stay unmapped.
+      expect(translate([0xb6, 0x60, 0x10])).toBeNull()
+    })
+
+    it.each([
+      [0x46, 'a'],
+      [0x47, 'b'],
+    ] as const)('LOAD (note 0x%s) loads the crate onto deck %s', (note, deck) => {
+      const translate = createFlx4Translator()
+      expect(translate([0x96, note, PRESS])).toEqual({
+        kind: 'crate_load',
+        deck,
+      })
+      expect(translate([0x96, note, RELEASE])).toBeNull()
+    })
+
     it('maps the HEADPHONES MIX knob to the cue blend', () => {
       const translate = createFlx4Translator()
       expect(translate([0xb6, 0x0c, 0x40])).toEqual({
