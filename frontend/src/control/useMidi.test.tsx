@@ -96,6 +96,27 @@ describe('useMidi pad LEDs', () => {
     expect(send.mock.calls[0][0][0]).toBe(0x99)
   })
 
+  it('lights the filled loop slots in the SAMPLER bank', async () => {
+    const send = vi.fn()
+    stubMidiAccess(send)
+    const { result } = renderHook(() => useMidi(), { wrapper })
+    act(() => result.current.connect())
+    await waitFor(() => expect(result.current.status).toBe('connected'))
+
+    send.mockClear()
+    result.current.setLoopPadLeds('a', [true, false, true, false])
+    expect(send.mock.calls.map((call) => call[0])).toEqual([
+      [0x97, 0x30, 0x7f],
+      [0x97, 0x31, 0x00],
+      [0x97, 0x32, 0x7f],
+      [0x97, 0x33, 0x00],
+      [0x97, 0x34, 0x00],
+      [0x97, 0x35, 0x00],
+      [0x97, 0x36, 0x00],
+      [0x97, 0x37, 0x00],
+    ])
+  })
+
   it('bumps the LED epoch when the controller switches pad modes', async () => {
     const send = vi.fn()
     const { input } = stubMidiAccess(send)

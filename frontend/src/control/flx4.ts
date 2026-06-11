@@ -9,6 +9,7 @@
  * in the map — shift layers, jog wheels, releases — translates to null. */
 
 import type { DeckId } from '../audio/engine'
+import { LOOP_SLOT_COUNT } from '../audio/loops'
 import type { ControlIntent } from './bus'
 
 /** Per-deck Note On status bytes, shared with the cue LEDs. */
@@ -40,6 +41,11 @@ export const PAD_COUNT = 8
  * (HOT CUE 0x00, BEAT JUMP 0x20, SAMPLER 0x30, KEYBOARD 0x40, BEAT
  * LOOP 0x60 are all confirmed) — the monitor verifies it on hardware. */
 export const PAD_FX_NOTE_BASE = 0x10
+/** SAMPLER bank: the freeze-pad loop slots (M13, ADR-0009). SHIFT +
+ * pad clears a slot — tracked in software like the CFX handover; if
+ * the firmware sends distinct bytes for shifted SAMPLER pads instead,
+ * the monitor will show them and this table gains rows. */
+export const LOOP_NOTE_BASE = 0x30
 
 /** Pad-mode selector buttons (HOT CUE 0x1B, PAD FX1 0x1E, BEAT JUMP
  * 0x20, SAMPLER 0x22, KEYBOARD 0x69, PAD FX2 0x6B, BEAT LOOP 0x6D,
@@ -100,7 +106,11 @@ function ccBuilder(
   return null
 }
 
-function buttonIntent(status: number, note: number): ControlIntent | null {
+function buttonIntent(
+  status: number,
+  note: number,
+  shift: Record<DeckId, boolean>,
+): ControlIntent | null {
   const playDeck = NOTE_ON_DECK[status]
   if (playDeck && note === PLAY_NOTE) return { kind: 'play_toggle', deck: playDeck }
   if (playDeck && note === CHANNEL_CUE_NOTE) {
@@ -119,6 +129,16 @@ function buttonIntent(status: number, note: number): ControlIntent | null {
     note < PAD_FX_NOTE_BASE + PAD_COUNT
   ) {
     return { kind: 'fx_select', deck: padDeck, index: note - PAD_FX_NOTE_BASE }
+  }
+  if (
+    padDeck &&
+    note >= LOOP_NOTE_BASE &&
+    note < LOOP_NOTE_BASE + LOOP_SLOT_COUNT
+  ) {
+    const index = note - LOOP_NOTE_BASE
+    return shift[padDeck]
+      ? { kind: 'loop_clear', deck: padDeck, index }
+      : { kind: 'loop_pad', deck: padDeck, index }
   }
   if (BEAT_FX_STATUSES.includes(status) && note === RECORD_NOTE) {
     return { kind: 'record_toggle' }
@@ -159,6 +179,6 @@ export function createFlx4Translator(): Flx4Translator {
 
     // Buttons are Note On: velocity 0x7F on press, 0x00 on release.
     if (value === 0) return null
-    return buttonIntent(status, number)
+    return buttonIntent(status, number, shiftHeld)
   }
 }
