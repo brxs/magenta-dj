@@ -346,12 +346,24 @@ export function createAudioEngine(): AudioEngine {
           worklet.port.postMessage({ type: 'capture', id, frames })
         })
       }
+      // stopLoop lets the outgoing source ring through the down-ramp;
+      // it stays tracked here so a quick follow-up playLoop can cut it
+      // dead instead of summing two loops into the up-ramp.
+      let fadingLoopSource: AudioBufferSourceNode | null = null
       function stopLoopSource(at: number) {
         const source = loopSource
         if (!source) return
         loopSource = null
-        source.onended = () => source.disconnect()
+        fadingLoopSource = source
+        source.onended = () => {
+          source.disconnect()
+          if (fadingLoopSource === source) fadingLoopSource = null
+        }
         source.stop(at)
+      }
+      function cutFadingLoopSource(at: number) {
+        // A second stop() merely re-schedules the earlier one.
+        fadingLoopSource?.stop(at)
       }
 
       const cueToggle = bus.context.createGain()
@@ -448,7 +460,9 @@ export function createAudioEngine(): AudioEngine {
           if (!buffer) return false
           const time = bus.context.currentTime
           // Loop→loop swaps cut hard (the sampler convention); only the
-          // live↔loop handover below is ramped.
+          // live↔loop handover below is ramped. A source still fading
+          // out from a recent stopLoop is cut too.
+          cutFadingLoopSource(time)
           stopLoopSource(time)
           const source = bus.context.createBufferSource()
           source.buffer = buffer
@@ -482,6 +496,7 @@ export function createAudioEngine(): AudioEngine {
         dispose() {
           worklet.port.onmessage = null
           worklet.disconnect()
+          cutFadingLoopSource(bus.context.currentTime)
           stopLoopSource(bus.context.currentTime)
           liveGain.disconnect()
           loopGain.disconnect()

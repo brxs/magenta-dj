@@ -54,6 +54,11 @@ check: lint test
 verify-stream duration="60":
     cd backend && uv run python scripts/verify_m1.py {{duration}}
 
+# Worklet module graph loads in real Chromium (self-contained; jsdom
+# executes none of the worklet code).
+verify-worklets: build
+    cd frontend && node scripts/verify_worklet_modules.mjs
+
 # UI e2e in headless Chromium against a running server.
 verify-ui:
     cd backend && uv run python scripts/repro_reconnect_echo.py

@@ -472,6 +472,13 @@ describe('DeckColumn', () => {
     ).toHaveAttribute('aria-pressed', 'true')
   })
 
+  it('disables the loop slots while the deck cannot take them', () => {
+    renderPanel({ connection: 'closed' })
+    expect(
+      screen.getByRole('button', { name: 'Loop slot 1' }),
+    ).toBeDisabled()
+  })
+
   it('changes the loop capture length', () => {
     const onSetLoopSeconds = vi.fn()
     renderPanel(

@@ -88,5 +88,7 @@ mirror app state. The measured byte map lives in
 - `just verify-stream` / `just verify-ui` — e2e against a running server
   (UI e2e needs Playwright Chromium once: `npx playwright install chromium`
   in `frontend/`)
+- `just verify-worklets` — the audio-worklet module graph loads in real
+  Chromium (self-contained; jsdom executes none of the worklet code)
 - Hardware behaviour is verified by a human against the checklists in
   `docs/` (`m7-`, `m9-m10-`, `m12-hardware-checklist.md`)

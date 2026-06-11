@@ -104,4 +104,14 @@ describe('loop capture kernel', () => {
     expect(left).toHaveLength(0)
     expect(right).toHaveLength(0)
   })
+
+  it('treats a malformed request as zero frames, not a crash', () => {
+    const r = ring(8)
+    r.write([1, 2, 3, 4])
+    r.consume(4)
+    const { left } = captureRecent(
+      r.left, r.right, r.readPos, r.capacity, r.state, -3,
+    )
+    expect(left).toHaveLength(0)
+  })
 })

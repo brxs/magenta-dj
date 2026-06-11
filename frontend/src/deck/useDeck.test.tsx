@@ -414,6 +414,23 @@ describe('useDeck freeze loops', () => {
     expect(result.current.loop.active).toBeNull()
   })
 
+  it('a STOP during the capture round-trip wins over the stale capture', async () => {
+    const { engine, channel } = makeFakeEngine()
+    let finishCapture!: (captured: boolean) => void
+    vi.mocked(channel.captureLoop).mockImplementation(
+      () => new Promise((resolve) => (finishCapture = resolve)),
+    )
+    const { result } = await playingDeck(engine)
+
+    act(() => result.current.toggleLoopPad(0))
+    act(() => result.current.stop())
+    await act(async () => finishCapture(true))
+
+    expect(channel.playLoop).not.toHaveBeenCalled()
+    expect(result.current.loop.filled[0]).toBe(false)
+    expect(result.current.loop.active).toBeNull()
+  })
+
   it('restores the persisted loop length and captures with it', async () => {
     updateDeckSettings('a', { loopSeconds: 8 })
     const { engine, channel } = makeFakeEngine()

@@ -391,6 +391,7 @@ export function DeckColumn({
               variant={loop.active === slot ? 'primary' : 'default'}
               aria-label={t('deck.loop.slot', { n: slot + 1 })}
               aria-pressed={loop.active === slot}
+              disabled={!operable}
               onClick={(event) =>
                 event.shiftKey ? onClearLoopPad(slot) : onLoopPad(slot)
               }

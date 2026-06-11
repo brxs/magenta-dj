@@ -1,17 +1,37 @@
 // Loads the built worklet module graph in real Chromium — jsdom can't
 // execute AudioWorklet code, so a broken sibling import (crusher or
 // loop-capture kernel) would otherwise only surface at runtime.
-// Usage: serve dist first (python3 -m http.server 4173 -d dist), then
-// node scripts/verify_worklet_modules.mjs
+// Serves dist/ itself; run via `just verify-worklets` (or directly from
+// frontend/ after a build).
+
+import { createServer } from 'node:http'
+import { readFile } from 'node:fs/promises'
+import { extname, join, normalize } from 'node:path'
 
 import { chromium } from 'playwright'
 
-const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4173'
+const DIST = new URL('../dist', import.meta.url).pathname
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
+
+const server = createServer((request, response) => {
+  const path = normalize(request.url === '/' ? '/index.html' : request.url)
+  readFile(join(DIST, path))
+    .then((body) => {
+      response.setHeader('Content-Type', TYPES[extname(path)] ?? 'application/octet-stream')
+      response.end(body)
+    })
+    .catch(() => {
+      response.statusCode = 404
+      response.end()
+    })
+})
+await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve))
+const { port } = server.address()
 
 const browser = await chromium.launch()
 try {
   const page = await browser.newPage()
-  await page.goto(BASE)
+  await page.goto(`http://127.0.0.1:${port}/`)
   const result = await page.evaluate(async () => {
     const context = new AudioContext()
     try {
@@ -41,4 +61,5 @@ try {
   }
 } finally {
   await browser.close()
+  server.close()
 }

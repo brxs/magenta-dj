@@ -89,6 +89,10 @@ export function useDeck(deckId: DeckId): DeckControls {
     setLoopState(next)
     loopRef.current = next
   }, [])
+  // Capture is a port round-trip; a STOP or another pad press landing
+  // inside that window must win over the stale capture. Every loop
+  // gesture bumps this, and the capture callback bails if it moved.
+  const loopGestureRef = useRef(0)
   const [primed, setPrimedState] = useState(false)
   const primedRef = useRef(primed)
 
@@ -241,7 +245,8 @@ export function useDeck(deckId: DeckId): DeckControls {
     channelRef.current?.reset()
     channelRef.current?.setOnAir(true)
     // STOP silences the deck — a running freeze loop goes with it (the
-    // slot keeps its capture).
+    // slot keeps its capture), and an in-flight capture may not land.
+    loopGestureRef.current += 1
     channelRef.current?.stopLoop()
     if (loopRef.current.active !== null) {
       setLoop({ ...loopRef.current, active: null })
@@ -321,6 +326,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     (slot: number) => {
       const channel = channelRef.current
       if (!channel || slot < 0 || slot >= LOOP_SLOT_COUNT) return
+      const gesture = ++loopGestureRef.current
       const current = loopRef.current
       if (current.active === slot) {
         channel.stopLoop()
@@ -336,6 +342,7 @@ export function useDeck(deckId: DeckId): DeckControls {
       // played to loop (ADR-0009).
       void channel.captureLoop(slot, current.seconds).then((captured) => {
         if (!captured || channelRef.current !== channel) return
+        if (loopGestureRef.current !== gesture) return // overtaken
         if (!channel.playLoop(slot)) return
         const latest = loopRef.current
         setLoop({
@@ -353,6 +360,7 @@ export function useDeck(deckId: DeckId): DeckControls {
   const clearLoopPad = useCallback(
     (slot: number) => {
       if (slot < 0 || slot >= LOOP_SLOT_COUNT) return
+      loopGestureRef.current += 1
       const channel = channelRef.current
       const current = loopRef.current
       if (current.active === slot) channel?.stopLoop()
