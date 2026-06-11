@@ -452,7 +452,17 @@ the device against a checklist addendum.
 
 ## M13 — Freeze pads: capture and loop the moment
 
-**Status: ⬜ planned.**
+**Status: ✅ done (2026-06-11).** All four scope items shipped: ADR-0009
+(capture from the player ring's played history — what was heard, not
+what was queued — looped at the channel head behind a live/loop gain
+pair), the unit-tested seam and capture-bookkeeping math, the four-slot
+loop row with a persisted capture length, and the SAMPLER-bank mapping
+with truthful LEDs. Exit criteria verified on the physical device
+against [`m13-hardware-checklist.md`](m13-hardware-checklist.md) —
+every box ticked, including the monitor confirmations that the SAMPLER
+bank sits at the scheme's `0x30` base and that shifted pads keep their
+notes, so SHIFT + pad clears work soft-shift style like the M12 CFX
+handover.
 
 **Goal:** a generative deck never plays the same thing twice — which is
 the magic and the problem. When the model lands on something great,
