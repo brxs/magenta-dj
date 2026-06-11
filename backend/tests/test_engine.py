@@ -125,3 +125,33 @@ def test_sample_cache_is_capped(monkeypatch):
     for index in range(3):
         engine.embed_sample(f"sample:{index}", sample_pcm(4))
     assert list(engine._samples) == ["sample:1", "sample:2"]
+
+
+def test_sample_cache_evicts_least_recently_used_not_oldest(monkeypatch):
+    # A sample still on the pad is touched by every style send, so it
+    # must never be the eviction victim while it is live.
+    import magenta_dj.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "SAMPLE_CACHE_SIZE", 2)
+    engine, _ = make_engine({})
+    engine.embed_sample("sample:live", sample_pcm(4))
+    engine.embed_sample("sample:old", sample_pcm(4))
+    engine.set_style([("sample:live", 1.0)], sample_keys=frozenset({"sample:live"}))
+    engine.embed_sample("sample:new", sample_pcm(4))
+    assert list(engine._samples) == ["sample:live", "sample:new"]
+
+
+def test_failed_embed_does_not_evict(monkeypatch):
+    import magenta_dj.engine as engine_module
+
+    monkeypatch.setattr(engine_module, "SAMPLE_CACHE_SIZE", 1)
+    engine, _ = make_engine({})
+    engine.embed_sample("sample:kept", sample_pcm(4))
+
+    def explode(_):
+        raise RuntimeError("musiccoca blew up")
+
+    engine._system = SimpleNamespace(embed_style=explode)
+    with pytest.raises(RuntimeError):
+        engine.embed_sample("sample:new", sample_pcm(4))
+    assert list(engine._samples) == ["sample:kept"]

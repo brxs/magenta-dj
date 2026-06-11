@@ -120,6 +120,13 @@ export function DeckColumn({
   >(() => loadDeckSettings(deckId).targets ?? [])
   const [sampling, setSampling] = useState(false)
   const [sampleError, setSampleError] = useState<string | null>(null)
+  // Mirrors the latest committed targets for reads after an await —
+  // the async sample flow must not go stale, and must not smuggle
+  // side effects into a state updater (StrictMode replays those).
+  const targetsRef = useRef(targets)
+  useEffect(() => {
+    targetsRef.current = targets
+  }, [targets])
   const [cursor, setCursor] = useState<PadPoint>(
     () => loadDeckSettings(deckId).cursor ?? { x: 0.5, y: 0.5 },
   )
@@ -240,16 +247,20 @@ export function DeckColumn({
     setSampleError(null)
     try {
       const result = await onSampleOtherDeck()
-      if (!result) return
-      setTargets((current) => {
-        if (current.length >= MAX_TARGETS) return current
-        const next = [
-          ...current,
-          { text: result.label, sample: result.sample, ...spawnPosition(current) },
-        ]
-        sendStyle(next, cursor)
-        return next
-      })
+      if (!result) {
+        // The other deck is playing but hasn't produced the minimum
+        // capture yet — say so instead of silently doing nothing.
+        setSampleError(t('deck.style.sampleTooSoon'))
+        return
+      }
+      const current = targetsRef.current
+      if (current.length >= MAX_TARGETS) return
+      const next = [
+        ...current,
+        { text: result.label, sample: result.sample, ...spawnPosition(current) },
+      ]
+      setTargets(next)
+      sendStyle(next, cursor)
     } catch (error) {
       setSampleError(error instanceof Error ? error.message : String(error))
     } finally {

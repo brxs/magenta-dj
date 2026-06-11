@@ -96,9 +96,12 @@ class DeckEngine:
             samples=samples.reshape(-1, CHANNELS).astype(np.float32),
             sample_rate=SAMPLE_RATE,
         )
+        # Embed before evicting: a failed embed must not cost an
+        # unrelated cached entry.
+        embedding = self._system.embed_style(waveform)
         if sample_id not in self._samples and len(self._samples) >= SAMPLE_CACHE_SIZE:
             self._samples.pop(next(iter(self._samples)))
-        self._samples[sample_id] = self._system.embed_style(waveform)
+        self._samples[sample_id] = embedding
 
     def set_style(
         self,
@@ -126,7 +129,12 @@ class DeckEngine:
                     # model switch); the clip is gone, so re-sampling is
                     # the only recovery.
                     raise ValueError(f"unknown sample {key!r} — re-sample the deck")
-                embedding = self._samples[key]
+                # Refresh recency (dict order is the LRU order, like the
+                # text cache): a sample still on the pad is touched by
+                # every style send, so it can never be the eviction
+                # victim while it is live.
+                embedding = self._samples.pop(key)
+                self._samples[key] = embedding
             else:
                 embedding = self._embed_cached(key).astype(np.float32)
             term = (weight / total) * embedding

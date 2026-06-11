@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
 import type { FxKind } from '../audio/fx'
@@ -468,6 +469,65 @@ describe('DeckColumn', () => {
     expect(onSetStyle).toHaveBeenCalledWith({
       prompts: [{ text: '⏺ B·1', weight: 1, sample: 'sample:b:1' }],
     })
+  })
+
+  it('sends the sampled blend exactly once under StrictMode', async () => {
+    // Guards the updater-purity fix: a sendStyle smuggled into a
+    // setTargets updater double-fires when StrictMode replays it.
+    const onSampleOtherDeck = vi.fn(async () => ({
+      label: '⏺ B·1',
+      sample: 'sample:b:1',
+    }))
+    const onSetStyle = vi.fn()
+    render(
+      <StrictMode>
+        <ControlBusProvider bus={createControlBus()}>
+          <DeckColumn
+            deckId="a"
+            // activeStyle set: keeps the reload-resend effect quiet so
+            // the only sender under test is the sampling handler.
+            state={{
+              ...initialDeckState,
+              connection: 'open',
+              activeStyle: { prompts: [{ text: 'x', weight: 1 }] },
+            }}
+            getWaveformRange={() => [0, 0]}
+            onPlay={noop}
+            onStop={noop}
+            onSetStyle={onSetStyle as (s: object) => void}
+            onSetModel={noop as (m: string) => void}
+            onRestart={noop}
+            fx={{ kind: null, amount: 0 }}
+            onSetFx={noop as (k: unknown) => void}
+            onSetFxAmount={noop as (v: number) => void}
+            loop={{ filled: [false, false, false, false], active: null, seconds: 4 }}
+            onLoopPad={noop as (slot: number) => void}
+            onClearLoopPad={noop as (slot: number) => void}
+            onSetLoopSeconds={noop as (seconds: number) => void}
+            bpm={null}
+            onSampleOtherDeck={onSampleOtherDeck}
+            canSample
+          />
+        </ControlBusProvider>
+      </StrictMode>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
+    await screen.findByText('⏺ B·1 ✕')
+    expect(onSetStyle).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports an honest reason when the other deck has not played enough', async () => {
+    const onSampleOtherDeck = vi.fn(async () => null)
+    renderPanel(
+      { connection: 'open' },
+      { onSampleOtherDeck: onSampleOtherDeck as unknown as () => void },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
+    expect(
+      await screen.findByText(
+        "Sampling failed: the other deck hasn't played enough yet",
+      ),
+    ).toBeInTheDocument()
   })
 
   it('disables sampling while the other deck is silent', () => {

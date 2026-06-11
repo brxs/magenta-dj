@@ -366,10 +366,16 @@ def test_style_sample_rejected_while_restarting(client, deck):
 def test_style_sample_validates_id_and_body(client, deck):
     no_id = client.post("/api/deck/a/style-sample", content=sample_body(4))
     assert no_id.status_code == 422
+    huge_id = client.post(
+        f"/api/deck/a/style-sample?id={'s' * 65}", content=sample_body(4)
+    )
+    assert huge_id.status_code == 422
     ragged = client.post("/api/deck/a/style-sample?id=s", content=b"\x00" * 10)
     assert ragged.status_code == 422
     short = client.post("/api/deck/a/style-sample?id=s", content=sample_body(1))
     assert short.status_code == 422
+    # Oversized uploads are refused from the declared length, before the
+    # body is buffered — hence 413, not the post-buffering 422.
     long = client.post("/api/deck/a/style-sample?id=s", content=sample_body(20))
-    assert long.status_code == 422
+    assert long.status_code == 413
     assert deck.cmd_queue.empty()

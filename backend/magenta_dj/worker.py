@@ -100,7 +100,12 @@ def run_deck_worker(
                     entries = cmd["prompts"]
                 try:
                     # Sampled entries (M15) carry their cache id alongside
-                    # the display label; the id is the blend key.
+                    # the display label; the id is the blend key. Keys
+                    # share one namespace: a TEXT prompt typed to exactly
+                    # match a live sample id would resolve as that sample.
+                    # Accepted — ids are machine-shaped ("sample:a:1") and
+                    # the collision needs another entry holding the id in
+                    # the same style.
                     engine.set_style(
                         [
                             (entry.get("sample") or entry["text"], entry["weight"])

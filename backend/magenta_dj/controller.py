@@ -39,7 +39,7 @@ DEFAULT_MODEL = "mrt2_small"
 # Each distinct prompt costs one MusicCoCa embed in the worker (cached, but
 # the cache is finite — see engine.EMBED_CACHE_SIZE).
 MAX_STYLE_PROMPTS = 8
-MAX_SAMPLE_ID = 64
+MAX_SAMPLE_ID_LENGTH = 64
 
 # Rough whole-process footprints (model + MusicCoCa + MLX runtime), used only
 # for the UI's "this combination looks tight" warning — not enforcement.
@@ -179,7 +179,9 @@ def validate_command(parsed: object) -> tuple[dict | None, str | None]:
             # Sampled targets (M15): 'sample' carries the embedding id the
             # client registered via /api/deck/{deck}/style-sample.
             if sample is not None:
-                if not (isinstance(sample, str) and 0 < len(sample) <= MAX_SAMPLE_ID):
+                if not (
+                    isinstance(sample, str) and 0 < len(sample) <= MAX_SAMPLE_ID_LENGTH
+                ):
                     return None, "style prompt 'sample' must be a short string id"
                 clean["sample"] = sample
             clean_prompts.append(clean)
@@ -357,10 +359,16 @@ async def style_sample(deck_id: str, request: Request) -> dict:
     if deck.restarting:
         raise HTTPException(status_code=409, detail="deck is loading a model")
     sample_id = request.query_params.get("id", "")
-    if not sample_id or len(sample_id) > MAX_SAMPLE_ID:
+    if not sample_id or len(sample_id) > MAX_SAMPLE_ID_LENGTH:
         raise HTTPException(status_code=422, detail="missing or oversized 'id'")
-    body = await request.body()
     frame_bytes = 4 * engine.CHANNELS
+    # Reject an oversized upload from its declared length, before
+    # buffering megabytes only to refuse them.
+    declared = request.headers.get("content-length", "")
+    max_bytes = engine.MAX_SAMPLE_SECONDS * engine.SAMPLE_RATE * frame_bytes
+    if declared.isdigit() and int(declared) > max_bytes:
+        raise HTTPException(status_code=413, detail="sample upload too large")
+    body = await request.body()
     if len(body) == 0 or len(body) % frame_bytes:
         raise HTTPException(
             status_code=422, detail="body must be whole interleaved stereo frames"
