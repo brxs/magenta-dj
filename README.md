@@ -45,6 +45,10 @@ cluster them), and ride the crossfader between decks.
 - **Color FX** — one knob per deck over a chosen effect: Filter (bipolar
   LPF/HPF), Dub Echo, Space, Crush, Noise, Sweep. The knob's centre/zero is a
   bit-exact bypass ([ADR-0008](docs/adr/0008-color-fx-as-one-knob-curves-at-a-pre-fader-insert.md)).
+- **Freeze loops** — capture the last bars of a deck into one of four
+  loop slots and hold the moment on air while you re-steer the model
+  underneath; loops are session-only by design
+  ([ADR-0009](docs/adr/0009-freeze-pads-loop-played-audio-at-the-channel-head.md)).
 - **Headphone cue** — hit a channel's **Cue**, ride the **Cue mix** knob
   between cue and master, and pick a **Phones out**: any output device the
   browser can reach, or the FLX4's own headphone jack, which is fed by the
@@ -68,7 +72,8 @@ plain MIDI works too, minus position sync). Mapped controls:
 - **SMART CFX** knob — Color FX amount; hold **SHIFT** to sweep the style pad
   instead
 - **PAD FX** pad bank — select the deck's effect (re-press toggles it off);
-  **HOT CUE** pads pick style targets
+  **HOT CUE** pads pick style targets; **SAMPLER** pads freeze loops
+  (SHIFT + pad clears a slot)
 - **HEADPHONES MIX** knob — cue mix
 
 Knob and fader positions sync from the hardware on connect, and the LEDs
@@ -83,5 +88,7 @@ mirror app state. The measured byte map lives in
 - `just verify-stream` / `just verify-ui` — e2e against a running server
   (UI e2e needs Playwright Chromium once: `npx playwright install chromium`
   in `frontend/`)
+- `just verify-worklets` — the audio-worklet module graph loads in real
+  Chromium (self-contained; jsdom executes none of the worklet code)
 - Hardware behaviour is verified by a human against the checklists in
   `docs/` (`m7-`, `m9-m10-`, `m12-hardware-checklist.md`)

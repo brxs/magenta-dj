@@ -5,6 +5,7 @@ import { useControlBus } from './busContext'
 import {
   createFlx4Translator,
   isPadModeSwitch,
+  LOOP_NOTE_BASE,
   PAD_COUNT,
   PAD_FX_NOTE_BASE,
   PAD_STATUS_BY_DECK,
@@ -32,7 +33,9 @@ export function useMidi() {
   // device's pad LEDs, so subscribers repaint everything they own.
   const [ledEpoch, setLedEpoch] = useState(0)
 
-  const [{ connect, readMonitor, setLed, setPadLeds, setFxPadLeds }] = useState(() => {
+  const [
+    { connect, readMonitor, setLed, setPadLeds, setFxPadLeds, setLoopPadLeds },
+  ] = useState(() => {
     let entries: MidiMonitorEntry[] = []
     let nextEntryId = 0
     const translate = createFlx4Translator()
@@ -78,6 +81,13 @@ export function useMidi() {
           )
         }
       },
+      /** Light filled loop slots in the SAMPLER bank (M13); pads
+       * beyond the slots stay dark. */
+      setLoopPadLeds: (deck: DeckId, filled: boolean[]) => {
+        for (let pad = 0; pad < PAD_COUNT; pad++) {
+          setLed(PAD_STATUS_BY_DECK[deck], LOOP_NOTE_BASE + pad, Boolean(filled[pad]))
+        }
+      },
     }
   })
 
@@ -89,6 +99,7 @@ export function useMidi() {
     setLed,
     setPadLeds,
     setFxPadLeds,
+    setLoopPadLeds,
     ledEpoch,
   }
 }

@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 
 import type { DeckId } from '../audio/engine'
 import { FX_KINDS, fxRestPosition, type FxKind } from '../audio/fx'
+import { LOOP_LENGTH_OPTIONS, LOOP_SLOT_COUNT } from '../audio/loops'
 import { useControlBus } from '../control/busContext'
 import { Button } from '../ui/Button'
 import { Knob } from '../ui/Knob'
@@ -16,6 +17,7 @@ import { WaveformStrip } from '../ui/WaveformStrip'
 import { XYPad } from '../ui/XYPad'
 import { isDeckOperable, type ActiveStyle, type DeckState } from './deckState'
 import { padWeights, spawnPosition, sweepPosition, type PadPoint } from './padWeights'
+import type { LoopState } from './useDeck'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import './deck.css'
 
@@ -75,6 +77,11 @@ type DeckColumnProps = {
   fx: { kind: FxKind | null; amount: number }
   onSetFx: (kind: FxKind | null) => void
   onSetFxAmount: (amount: number) => void
+  /** Freeze pads (M13): slot state and the pad/clear/length actions. */
+  loop: LoopState
+  onLoopPad: (slot: number) => void
+  onClearLoopPad: (slot: number) => void
+  onSetLoopSeconds: (seconds: number) => void
 }
 
 export function DeckColumn({
@@ -91,6 +98,10 @@ export function DeckColumn({
   fx,
   onSetFx,
   onSetFxAmount,
+  loop,
+  onLoopPad,
+  onClearLoopPad,
+  onSetLoopSeconds,
 }: DeckColumnProps) {
   const { t } = useTranslation()
   const [targets, setTargets] = useState<(PadPoint & { text: string })[]>(
@@ -106,13 +117,15 @@ export function DeckColumn({
   const operable = isDeckOperable(state)
   const statusKey = state.switchingModel
     ? 'deck.status.loadingModel'
-    : primed && connected
-      ? 'deck.status.primed'
-      : {
-          connecting: 'deck.status.connecting',
-          open: 'deck.status.connected',
-          closed: 'deck.status.disconnected',
-        }[state.connection]
+    : loop.active !== null && connected
+      ? 'deck.status.frozen'
+      : primed && connected
+        ? 'deck.status.primed'
+        : {
+            connecting: 'deck.status.connecting',
+            open: 'deck.status.connected',
+            closed: 'deck.status.disconnected',
+          }[state.connection]
   const bufferFraction = state.bufferedSeconds / BUFFER_TARGET_SECONDS
   const bufferTone =
     !state.playing || bufferFraction >= 0.5 ? 'ok' : bufferFraction >= 0.25 ? 'warn' : 'danger'
@@ -363,6 +376,38 @@ export function DeckColumn({
           disabled={!fx.kind}
           resetValue={fx.kind ? fxRestPosition(fx.kind) : 0}
           onChange={onSetFxAmount}
+        />
+      </div>
+
+      {/* Freeze pads (M13): lit = slot filled, accented = looping on
+          air. Shift+click clears a slot — the same chord as SHIFT+pad
+          on the hardware bank. */}
+      <div className="deck__loop" role="group" aria-label={t('deck.loop.title')}>
+        <div className="deck__loop-slots">
+          {Array.from({ length: LOOP_SLOT_COUNT }, (_, slot) => (
+            <Button
+              key={slot}
+              lit={loop.filled[slot]}
+              variant={loop.active === slot ? 'primary' : 'default'}
+              aria-label={t('deck.loop.slot', { n: slot + 1 })}
+              aria-pressed={loop.active === slot}
+              disabled={!operable}
+              onClick={(event) =>
+                event.shiftKey ? onClearLoopPad(slot) : onLoopPad(slot)
+              }
+            >
+              {slot + 1}
+            </Button>
+          ))}
+        </div>
+        <Select
+          label={t('deck.loop.length')}
+          value={String(loop.seconds)}
+          options={LOOP_LENGTH_OPTIONS.map((seconds) => ({
+            value: String(seconds),
+            label: t('deck.loop.lengthOption', { seconds }),
+          }))}
+          onChange={(value) => onSetLoopSeconds(Number(value))}
         />
       </div>
 

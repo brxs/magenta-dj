@@ -141,7 +141,14 @@ function App() {
   )
 
   const midi = useMidi()
-  const { status: midiStatus, setLed, setPadLeds, setFxPadLeds, ledEpoch } = midi
+  const {
+    status: midiStatus,
+    setLed,
+    setPadLeds,
+    setFxPadLeds,
+    setLoopPadLeds,
+    ledEpoch,
+  } = midi
   const [padCounts, setPadCounts] = useState<Record<DeckId, number>>({
     a: 0,
     b: 0,
@@ -176,6 +183,13 @@ function App() {
     setFxPadLeds('a', deckA.fx.kind ? FX_KINDS.indexOf(deckA.fx.kind) : null)
     setFxPadLeds('b', deckB.fx.kind ? FX_KINDS.indexOf(deckB.fx.kind) : null)
   }, [midiStatus, setFxPadLeds, deckA.fx.kind, deckB.fx.kind, ledEpoch])
+
+  // SAMPLER bank LEDs (M13): filled freeze-loop slots lit per deck.
+  useEffect(() => {
+    if (midiStatus !== 'connected') return
+    setLoopPadLeds('a', deckA.loop.filled)
+    setLoopPadLeds('b', deckB.loop.filled)
+  }, [midiStatus, setLoopPadLeds, deckA.loop.filled, deckB.loop.filled, ledEpoch])
 
   // Cue LEDs (M10): channel CUE mirrors the headphone-cue toggles,
   // transport CUE lights while a deck is primed off air.
@@ -252,6 +266,10 @@ function App() {
           fx={deckA.fx}
           onSetFx={deckA.setFx}
           onSetFxAmount={deckA.setFxAmount}
+          loop={deckA.loop}
+          onLoopPad={deckA.toggleLoopPad}
+          onClearLoopPad={deckA.clearLoopPad}
+          onSetLoopSeconds={deckA.setLoopSeconds}
         />
         <MixerStrip
           channels={channels}
@@ -276,6 +294,10 @@ function App() {
           fx={deckB.fx}
           onSetFx={deckB.setFx}
           onSetFxAmount={deckB.setFxAmount}
+          loop={deckB.loop}
+          onLoopPad={deckB.toggleLoopPad}
+          onClearLoopPad={deckB.clearLoopPad}
+          onSetLoopSeconds={deckB.setLoopSeconds}
         />
       </div>
     </main>

@@ -44,6 +44,17 @@ describe('persistence', () => {
     expect(loadDeckSettings('a').fx).toBeUndefined()
   })
 
+  it('round-trips the loop length and drops off-menu values', () => {
+    updateDeckSettings('a', { loopSeconds: 8 })
+    expect(loadDeckSettings('a').loopSeconds).toBe(8)
+
+    localStorage.setItem(
+      'magenta-dj:v1',
+      JSON.stringify({ decks: { a: { loopSeconds: 7 } } }),
+    )
+    expect(loadDeckSettings('a').loopSeconds).toBeUndefined()
+  })
+
   it('round-trips and clamps deck EQ', () => {
     updateDeckSettings('a', { eq: { low: 0, mid: 0.5, high: 1 } })
     expect(loadDeckSettings('a').eq).toEqual({ low: 0, mid: 0.5, high: 1 })

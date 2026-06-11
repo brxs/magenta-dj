@@ -67,6 +67,67 @@ describe('createFlx4Translator', () => {
       expect(translate([0x9a, 0x00, PRESS])).toBeNull()
     })
 
+    it.each([
+      [0x97, 'a'],
+      [0x99, 'b'],
+    ] as const)('SAMPLER pads on %s drive deck %s loop slots', (status, deck) => {
+      const translate = createFlx4Translator()
+      for (let pad = 0; pad < 4; pad++) {
+        expect(translate([status, 0x30 + pad, PRESS])).toEqual({
+          kind: 'loop_pad',
+          deck,
+          index: pad,
+        })
+      }
+      expect(translate([status, 0x30, RELEASE])).toBeNull()
+      expect(translate([status, 0x34, PRESS])).toBeNull() // beyond the slots
+    })
+
+    it.each([
+      [0x90, 0x97, 'a'],
+      [0x91, 0x99, 'b'],
+    ] as const)(
+      'SHIFT (%s) + SAMPLER pad clears the deck %s slot, release restores',
+      (shiftStatus, padStatus, deck) => {
+        const translate = createFlx4Translator()
+        translate([shiftStatus, 0x3f, 0x7f]) // SHIFT down
+        expect(translate([padStatus, 0x31, PRESS])).toEqual({
+          kind: 'loop_clear',
+          deck,
+          index: 1,
+        })
+        translate([shiftStatus, 0x3f, 0x00]) // SHIFT up
+        expect(translate([padStatus, 0x31, PRESS])).toEqual({
+          kind: 'loop_pad',
+          deck,
+          index: 1,
+        })
+      },
+    )
+
+    it.each([
+      [0x98, 'a'],
+      [0x9a, 'b'],
+    ] as const)(
+      'shift-layer (%s) SAMPLER pads clear deck %s slots',
+      (status, deck) => {
+        // The firmware moves held-SHIFT pads onto their own status
+        // bytes — the clear chord must work without the 0x3F note
+        // ever arriving.
+        const translate = createFlx4Translator()
+        for (let pad = 0; pad < 4; pad++) {
+          expect(translate([status, 0x30 + pad, PRESS])).toEqual({
+            kind: 'loop_clear',
+            deck,
+            index: pad,
+          })
+        }
+        expect(translate([status, 0x30, RELEASE])).toBeNull()
+        expect(translate([status, 0x34, PRESS])).toBeNull() // beyond the slots
+        expect(translate([status, 0x10, PRESS])).toBeNull() // other banks stay unmapped
+      },
+    )
+
     it.each([[0x94], [0x95]])(
       'BEAT FX ON/OFF press on %s toggles recording',
       (status) => {

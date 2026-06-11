@@ -1,12 +1,22 @@
 import { createCrusherState, crushBlock } from './crusher-kernel.js';
+import {
+  captureRecent,
+  clampHistory,
+  createCaptureState,
+  noteConsumed,
+} from './loop-capture-kernel.js';
 
 // PCM deck player. Ring-buffers interleaved stereo float32 chunks posted from
 // the main thread and plays them, counting underrun events. Playback starts
 // (and restarts after an underrun) only once PREBUFFER_SECONDS of audio is
 // queued, so one slow chunk causes a single counted gap instead of a crackle
 // storm. Posts {underruns, bufferedSeconds, playing} stats every second.
+// The ring doubles as the freeze-pad capture source (ADR-0009): frames
+// behind the read position are recently played audio, answered on demand.
 //
 // Messages in: {type: 'pcm', samples: Float32Array} | {type: 'reset'}
+//            | {type: 'capture', id, frames} (answered with
+//              {type: 'captured', id, left, right})
 
 const CAPACITY_SECONDS = 30;
 const PREBUFFER_SECONDS = 1.5;
@@ -24,6 +34,7 @@ class PCMPlayer extends AudioWorkletProcessor {
     this.started = false;
     this.underruns = 0;
     this.framesSinceStats = 0;
+    this.capture = createCaptureState();
     this.port.onmessage = (event) => {
       const message = event.data;
       if (message.type === 'pcm') {
@@ -31,11 +42,27 @@ class PCMPlayer extends AudioWorkletProcessor {
       } else if (message.type === 'reset') {
         // Flushes queued audio only; underruns intentionally survive — the
         // counter reports the whole page session, not one play.
+        // History goes too: a capture spanning a reset would splice two
+        // unrelated streams into one "loop".
         this.readPos = 0;
         this.writePos = 0;
         this.available = 0;
         this.started = false;
+        this.capture = createCaptureState();
         this.postStats();
+      } else if (message.type === 'capture') {
+        const { left, right } = captureRecent(
+          this.left,
+          this.right,
+          this.readPos,
+          this.capacity,
+          this.capture,
+          message.frames,
+        );
+        this.port.postMessage(
+          { type: 'captured', id: message.id, left, right },
+          [left.buffer, right.buffer],
+        );
       }
     };
   }
@@ -48,6 +75,7 @@ class PCMPlayer extends AudioWorkletProcessor {
       this.writePos = (this.writePos + 1) % this.capacity;
     }
     this.available = Math.min(this.available + frames, this.capacity);
+    clampHistory(this.capture, this.available, this.capacity);
   }
 
   postStats() {
@@ -73,6 +101,7 @@ class PCMPlayer extends AudioWorkletProcessor {
         this.readPos = (this.readPos + 1) % this.capacity;
       }
       this.available -= frames;
+      noteConsumed(this.capture, frames, this.available, this.capacity);
     } else if (this.started) {
       this.underruns += 1;
       this.started = false; // re-arm the prebuffer; outputs stay silent

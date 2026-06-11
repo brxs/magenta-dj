@@ -2,6 +2,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
 import { EQ_FLAT, type EqBand } from '../audio/eq'
 import { fxRestPosition, type FxKind } from '../audio/fx'
+import { DEFAULT_LOOP_SECONDS, LOOP_SLOT_COUNT } from '../audio/loops'
 import { useAudioEngine } from '../audio/engineContext'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import type { DeckChannel, DeckId } from '../audio/engine'
@@ -14,6 +15,15 @@ import {
 } from './deckState'
 
 const RECONNECT_DELAY_MS = 2_000
+
+export type LoopState = {
+  /** Which slots hold a captured loop (the buffers live in the channel). */
+  filled: boolean[]
+  /** The slot currently replacing the live stream, if any. */
+  active: number | null
+  /** Capture length for the next press; persisted, unlike the loops. */
+  seconds: number
+}
 
 export type DeckControls = {
   state: DeckState
@@ -29,6 +39,13 @@ export type DeckControls = {
    * switch never lands mid-effect. */
   setFx: (kind: FxKind | null) => void
   setFxAmount: (amount: number) => void
+  /** Freeze pads (M13, ADR-0009): one press on an empty slot captures
+   * the just-played tail and loops it on air; a filled slot swaps in;
+   * the active slot returns to live. Loops are session-only. */
+  loop: LoopState
+  toggleLoopPad: (slot: number) => void
+  clearLoopPad: (slot: number) => void
+  setLoopSeconds: (seconds: number) => void
   /** Generating but off air (M10): buffer fills, only the cue tap hears
    * it. play() then drops it on air without flushing what was built up. */
   primed: boolean
@@ -62,6 +79,20 @@ export function useDeck(deckId: DeckId): DeckControls {
     () => loadDeckSettings(deckId).fx ?? { kind: null, amount: 0 },
   )
   const fxRef = useRef(fx)
+  const [loop, setLoopState] = useState<LoopState>(() => ({
+    filled: Array<boolean>(LOOP_SLOT_COUNT).fill(false),
+    active: null,
+    seconds: loadDeckSettings(deckId).loopSeconds ?? DEFAULT_LOOP_SECONDS,
+  }))
+  const loopRef = useRef(loop)
+  const setLoop = useCallback((next: LoopState) => {
+    setLoopState(next)
+    loopRef.current = next
+  }, [])
+  // Capture is a port round-trip; a STOP or another pad press landing
+  // inside that window must win over the stale capture. Every loop
+  // gesture bumps this, and the capture callback bails if it moved.
+  const loopGestureRef = useRef(0)
   const [primed, setPrimedState] = useState(false)
   const primedRef = useRef(primed)
 
@@ -213,9 +244,16 @@ export function useDeck(deckId: DeckId): DeckControls {
     // the next plain play() isn't silent.
     channelRef.current?.reset()
     channelRef.current?.setOnAir(true)
+    // STOP silences the deck — a running freeze loop goes with it (the
+    // slot keeps its capture), and an in-flight capture may not land.
+    loopGestureRef.current += 1
+    channelRef.current?.stopLoop()
+    if (loopRef.current.active !== null) {
+      setLoop({ ...loopRef.current, active: null })
+    }
     setPrimed(false)
     dispatch({ type: 'stop_requested' })
-  }, [send, setPrimed])
+  }, [send, setPrimed, setLoop])
 
   const setStyle = useCallback(
     (style: ActiveStyle) => {
@@ -284,6 +322,74 @@ export function useDeck(deckId: DeckId): DeckControls {
     [deckId],
   )
 
+  const toggleLoopPad = useCallback(
+    (slot: number) => {
+      const channel = channelRef.current
+      if (!channel || slot < 0 || slot >= LOOP_SLOT_COUNT) return
+      const gesture = ++loopGestureRef.current
+      const current = loopRef.current
+      if (current.active === slot) {
+        channel.stopLoop()
+        setLoop({ ...current, active: null })
+        return
+      }
+      if (current.filled[slot]) {
+        if (channel.playLoop(slot)) setLoop({ ...current, active: slot })
+        return
+      }
+      // One gesture: capture the just-played tail AND freeze onto it.
+      // The press is refused (no state change) when too little has
+      // played to loop (ADR-0009).
+      void channel.captureLoop(slot, current.seconds).then((captured) => {
+        if (!captured || channelRef.current !== channel) return
+        if (loopGestureRef.current !== gesture) {
+          // Overtaken by STOP or a newer press: drop the buffer too, so
+          // the engine's slot state matches the UI's "empty".
+          channel.clearLoop(slot)
+          return
+        }
+        if (!channel.playLoop(slot)) return
+        const latest = loopRef.current
+        setLoop({
+          ...latest,
+          filled: latest.filled.map((wasFilled, index) =>
+            index === slot ? true : wasFilled,
+          ),
+          active: slot,
+        })
+      })
+    },
+    [setLoop],
+  )
+
+  const clearLoopPad = useCallback(
+    (slot: number) => {
+      if (slot < 0 || slot >= LOOP_SLOT_COUNT) return
+      loopGestureRef.current += 1
+      const channel = channelRef.current
+      const current = loopRef.current
+      if (current.active === slot) channel?.stopLoop()
+      channel?.clearLoop(slot)
+      if (!current.filled[slot]) return
+      setLoop({
+        ...current,
+        filled: current.filled.map((wasFilled, index) =>
+          index === slot ? false : wasFilled,
+        ),
+        active: current.active === slot ? null : current.active,
+      })
+    },
+    [setLoop],
+  )
+
+  const setLoopSeconds = useCallback(
+    (seconds: number) => {
+      setLoop({ ...loopRef.current, seconds })
+      updateDeckSettings(deckId, { loopSeconds: seconds })
+    },
+    [deckId, setLoop],
+  )
+
   const setEqBand = useCallback(
     (band: EqBand, value: number) => {
       const next = { ...eqRef.current, [band]: value }
@@ -304,6 +410,10 @@ export function useDeck(deckId: DeckId): DeckControls {
     fx,
     setFx,
     setFxAmount,
+    loop,
+    toggleLoopPad,
+    clearLoopPad,
+    setLoopSeconds,
     primed,
     prime,
     play,

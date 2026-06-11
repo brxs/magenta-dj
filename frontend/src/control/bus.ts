@@ -18,6 +18,8 @@ export type ControlIntent =
   | { kind: 'deck_prep'; deck: DeckId }
   | { kind: 'fx_amount'; deck: DeckId; value: number }
   | { kind: 'fx_select'; deck: DeckId; index: number }
+  | { kind: 'loop_pad'; deck: DeckId; index: number }
+  | { kind: 'loop_clear'; deck: DeckId; index: number }
 
 export type ControlBus = {
   publish: (intent: ControlIntent) => void

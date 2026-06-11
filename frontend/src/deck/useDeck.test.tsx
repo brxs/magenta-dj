@@ -65,6 +65,10 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     setFx: vi.fn(),
     setFxAmount: vi.fn(),
     setOnAir: vi.fn(),
+    captureLoop: vi.fn(async () => true),
+    playLoop: vi.fn(() => true),
+    stopLoop: vi.fn(),
+    clearLoop: vi.fn(),
     getLevel: vi.fn(() => 0),
     getWaveformRange: vi.fn(() => [0, 0] as [number, number]),
     dispose: vi.fn(),
@@ -321,5 +325,129 @@ describe('useDeck connection', () => {
     expect(result.current.state.connection).toBe('open')
     expect(warn).toHaveBeenCalled()
     warn.mockRestore()
+  })
+})
+
+describe('useDeck freeze loops', () => {
+  async function playingDeck(engine: AudioEngine) {
+    const rendered = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => rendered.result.current.play())
+    return rendered
+  }
+
+  it('captures into an empty slot and freezes onto it in one press', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+
+    await act(async () => result.current.toggleLoopPad(1))
+    expect(channel.captureLoop).toHaveBeenCalledWith(1, 4)
+    expect(channel.playLoop).toHaveBeenCalledWith(1)
+    expect(result.current.loop.filled[1]).toBe(true)
+    expect(result.current.loop.active).toBe(1)
+  })
+
+  it('returns to live on a second press, keeping the capture', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+    await act(async () => result.current.toggleLoopPad(0))
+
+    await act(async () => result.current.toggleLoopPad(0))
+    expect(channel.stopLoop).toHaveBeenCalled()
+    expect(result.current.loop.active).toBeNull()
+    expect(result.current.loop.filled[0]).toBe(true)
+  })
+
+  it('swaps onto a filled slot without recapturing', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+    await act(async () => result.current.toggleLoopPad(0))
+    await act(async () => result.current.toggleLoopPad(1))
+    vi.mocked(channel.captureLoop).mockClear()
+
+    await act(async () => result.current.toggleLoopPad(0))
+    expect(channel.captureLoop).not.toHaveBeenCalled()
+    expect(channel.playLoop).toHaveBeenLastCalledWith(0)
+    expect(result.current.loop.active).toBe(0)
+  })
+
+  it('refuses the press when too little has played to loop', async () => {
+    const { engine, channel } = makeFakeEngine()
+    vi.mocked(channel.captureLoop).mockResolvedValue(false)
+    const { result } = await playingDeck(engine)
+
+    await act(async () => result.current.toggleLoopPad(0))
+    expect(channel.playLoop).not.toHaveBeenCalled()
+    expect(result.current.loop.filled[0]).toBe(false)
+    expect(result.current.loop.active).toBeNull()
+  })
+
+  it('is a safe no-op before the channel exists', () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+
+    act(() => result.current.toggleLoopPad(0))
+    expect(channel.captureLoop).not.toHaveBeenCalled()
+    expect(result.current.loop.filled[0]).toBe(false)
+  })
+
+  it('stop() drops the loop but keeps the capture', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+    await act(async () => result.current.toggleLoopPad(2))
+
+    act(() => result.current.stop())
+    expect(channel.stopLoop).toHaveBeenCalled()
+    expect(result.current.loop.active).toBeNull()
+    expect(result.current.loop.filled[2]).toBe(true)
+  })
+
+  it('clears a slot, stopping it first when it is the active one', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+    await act(async () => result.current.toggleLoopPad(3))
+
+    act(() => result.current.clearLoopPad(3))
+    expect(channel.stopLoop).toHaveBeenCalled()
+    expect(channel.clearLoop).toHaveBeenCalledWith(3)
+    expect(result.current.loop.filled[3]).toBe(false)
+    expect(result.current.loop.active).toBeNull()
+  })
+
+  it('a STOP during the capture round-trip wins over the stale capture', async () => {
+    const { engine, channel } = makeFakeEngine()
+    let finishCapture!: (captured: boolean) => void
+    vi.mocked(channel.captureLoop).mockImplementation(
+      () => new Promise((resolve) => (finishCapture = resolve)),
+    )
+    const { result } = await playingDeck(engine)
+
+    act(() => result.current.toggleLoopPad(0))
+    act(() => result.current.stop())
+    await act(async () => finishCapture(true))
+
+    expect(channel.playLoop).not.toHaveBeenCalled()
+    expect(result.current.loop.filled[0]).toBe(false)
+    expect(result.current.loop.active).toBeNull()
+  })
+
+  it('restores the persisted loop length and captures with it', async () => {
+    updateDeckSettings('a', { loopSeconds: 8 })
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+    expect(result.current.loop.seconds).toBe(8)
+
+    await act(async () => result.current.toggleLoopPad(0))
+    expect(channel.captureLoop).toHaveBeenCalledWith(0, 8)
+  })
+
+  it('routes a live length change into the next capture', async () => {
+    updateDeckSettings('a', { loopSeconds: 4 })
+    const { engine, channel } = makeFakeEngine()
+    const { result } = await playingDeck(engine)
+
+    act(() => result.current.setLoopSeconds(2))
+    await act(async () => result.current.toggleLoopPad(0))
+    expect(channel.captureLoop).toHaveBeenCalledWith(0, 2)
   })
 })

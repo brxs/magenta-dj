@@ -73,6 +73,12 @@
         "sweep": "Sweep"
       }
     },
+    "loop": {
+      "title": "Freeze loops",
+      "slot": "Loop slot {{n}}",
+      "length": "Loop length",
+      "lengthOption": "{{seconds}} s"
+    },
     "play": "Play",
     "stop": "Stop",
     "volume": "Volume",
@@ -86,7 +92,8 @@
       "connected": "Connected",
       "disconnected": "Disconnected — retrying",
       "loadingModel": "Loading model…",
-      "primed": "Primed — off air"
+      "primed": "Primed — off air",
+      "frozen": "Frozen — looping"
     },
     "health": {
       "buffer": "Buffer",

@@ -60,6 +60,15 @@ export function applyAppIntent(
       deck.setFx(deck.fx.kind === kind ? null : kind)
       return
     }
+    case 'loop_pad':
+      // SAMPLER bank (M13): empty captures-and-freezes, filled swaps
+      // in, active returns to live — the semantics live in useDeck so
+      // the on-screen pads behave identically.
+      decks[intent.deck].toggleLoopPad(intent.index)
+      return
+    case 'loop_clear':
+      decks[intent.deck].clearLoopPad(intent.index)
+      return
     case 'crossfade':
       handlers.onCrossfade(intent.value)
       return

@@ -21,6 +21,12 @@ import { EQ_BANDS, EQ_FILTERS, eqValueToDb, type EqBand } from './eq'
 import { fxBlend, isFxActive, type FxKind } from './fx'
 import { buildFxGraph, type FxGraph } from './fxGraphs'
 import { rangeFromBytes, rmsFromBytes } from './levels'
+import {
+  buildLoopChannel,
+  LOOP_CROSSFADE_SECONDS,
+  LOOP_SLOT_COUNT,
+  MIN_LOOP_SECONDS,
+} from './loops'
 import { encodeWav, floatToInt16 } from './wav'
 
 export type DeckId = 'a' | 'b'
@@ -40,6 +46,15 @@ export type DeckChannel = {
   /** Off-air mutes the channel's master feed only — generation, meters,
    * and the cue tap stay live. The primed-deck state (M10). */
   setOnAir: (on: boolean) => void
+  /** Freeze pads (M13, ADR-0009): capture the just-played tail into a
+   * slot. Resolves false when too little has been played to loop. */
+  captureLoop: (slot: number, seconds: number) => Promise<boolean>
+  /** Swap the channel source from the live stream to a filled slot's
+   * loop (false when the slot is empty). The stream keeps running,
+   * muted, so stopLoop returns to fresh material instantly. */
+  playLoop: (slot: number) => boolean
+  stopLoop: () => void
+  clearLoop: (slot: number) => void
   /** Post-fader RMS level, 0..~1 (for channel meters). */
   getLevel: () => number
   /** Min/max of the latest audio window, -1..1 (for waveform strips). */
@@ -231,8 +246,11 @@ export function createAudioEngine(): AudioEngine {
         numberOfOutputs: 1,
         outputChannelCount: [2],
       })
-      // worklet → low → mid → high → volume → on-air → crossfade (M6/M10),
-      // with the cue tap branching off post-EQ, pre-fader (M9).
+      // worklet → live gain → low → mid → high → volume → on-air →
+      // crossfade (M6/M10), with the cue tap branching off post-EQ,
+      // pre-fader (M9), and the freeze-pad loop source (M13) summing
+      // into the EQ next to the live gain — the loop replaces the
+      // source, so everything downstream stays live on it.
       const eqNodes = Object.fromEntries(
         EQ_BANDS.map((band) => {
           const layout = EQ_FILTERS[band]
@@ -244,11 +262,16 @@ export function createAudioEngine(): AudioEngine {
           return [band, filter]
         }),
       ) as Record<EqBand, BiquadFilterNode>
-      let head: AudioNode = worklet
+      const liveGain = bus.context.createGain()
+      const loopGain = bus.context.createGain()
+      loopGain.gain.value = 0
+      worklet.connect(liveGain)
+      let head: AudioNode = liveGain
       for (const band of EQ_BANDS) {
         head.connect(eqNodes[band])
         head = eqNodes[band]
       }
+      loopGain.connect(eqNodes[EQ_BANDS[0]])
       // Color FX insert (M12, ADR-0008): a parallel pair — unity dry
       // branch and the active effect's graph — summed into `post`, the
       // point both the cue tap and the fader read, so the phones preview
@@ -296,6 +319,53 @@ export function createAudioEngine(): AudioEngine {
       fxAmount = initial.fx.amount
       swapFx(initial.fx.kind)
 
+      // Freeze pads (M13, ADR-0009): slot buffers are session-only and
+      // live with the channel; the source node swaps in behind the
+      // live/loop gain pair above. Captures are answered by the player
+      // worklet from its played history, matched by id.
+      const loopBuffers: (AudioBuffer | null)[] =
+        Array<AudioBuffer | null>(LOOP_SLOT_COUNT).fill(null)
+      let loopSource: AudioBufferSourceNode | null = null
+      let nextCaptureId = 0
+      type Captured = { left: Float32Array; right: Float32Array }
+      const pendingCaptures = new Map<number, (captured: Captured) => void>()
+      function requestCapture(frames: number): Promise<Captured | null> {
+        return new Promise((resolve) => {
+          const id = nextCaptureId++
+          // A suspended context never services the port; fail the press
+          // instead of leaving it pending forever (the recorder-flush
+          // precedent).
+          const deadline = setTimeout(() => {
+            pendingCaptures.delete(id)
+            resolve(null)
+          }, FLUSH_TIMEOUT_MS)
+          pendingCaptures.set(id, (captured) => {
+            clearTimeout(deadline)
+            resolve(captured)
+          })
+          worklet.port.postMessage({ type: 'capture', id, frames })
+        })
+      }
+      // stopLoop lets the outgoing source ring through the down-ramp;
+      // it stays tracked here so a quick follow-up playLoop can cut it
+      // dead instead of summing two loops into the up-ramp.
+      let fadingLoopSource: AudioBufferSourceNode | null = null
+      function stopLoopSource(at: number) {
+        const source = loopSource
+        if (!source) return
+        loopSource = null
+        fadingLoopSource = source
+        source.onended = () => {
+          source.disconnect()
+          if (fadingLoopSource === source) fadingLoopSource = null
+        }
+        source.stop(at)
+      }
+      function cutFadingLoopSource(at: number) {
+        // A second stop() merely re-schedules the earlier one.
+        fadingLoopSource?.stop(at)
+      }
+
       const cueToggle = bus.context.createGain()
       cueToggle.gain.value = initial.cue ? 1 : 0
       post.connect(cueToggle)
@@ -311,7 +381,15 @@ export function createAudioEngine(): AudioEngine {
       analyser.fftSize = ANALYSER_FFT_SIZE
       volume.connect(analyser)
       const analyserBuffer = new Uint8Array(analyser.fftSize)
-      worklet.port.onmessage = (event) => onStats(event.data)
+      worklet.port.onmessage = (event) => {
+        // Stats messages predate the capture protocol and carry no type.
+        if (event.data.type === 'captured') {
+          pendingCaptures.get(event.data.id)?.(event.data as Captured)
+          pendingCaptures.delete(event.data.id)
+          return
+        }
+        onStats(event.data)
+      }
       return {
         postPcm(samples) {
           worklet.port.postMessage({ type: 'pcm', samples }, [samples.buffer])
@@ -354,6 +432,60 @@ export function createAudioEngine(): AudioEngine {
             PARAM_RAMP_SECONDS,
           )
         },
+        async captureLoop(slot, seconds) {
+          if (slot < 0 || slot >= LOOP_SLOT_COUNT) return false
+          const rate = bus.context.sampleRate
+          const fadeFrames = Math.round(LOOP_CROSSFADE_SECONDS * rate)
+          const captured = await requestCapture(
+            Math.round(seconds * rate) + fadeFrames,
+          )
+          // The worklet returns what its played history holds; less
+          // than the floor would loop as a stutter, so refuse.
+          if (
+            !captured ||
+            captured.left.length < Math.round(MIN_LOOP_SECONDS * rate) + fadeFrames
+          ) {
+            return false
+          }
+          const left = buildLoopChannel(captured.left, fadeFrames)
+          const right = buildLoopChannel(captured.right, fadeFrames)
+          const buffer = bus.context.createBuffer(2, left.length, rate)
+          buffer.copyToChannel(left, 0)
+          buffer.copyToChannel(right, 1)
+          loopBuffers[slot] = buffer
+          return true
+        },
+        playLoop(slot) {
+          const buffer = loopBuffers[slot]
+          if (!buffer) return false
+          const time = bus.context.currentTime
+          // Loop→loop swaps cut hard (the sampler convention); only the
+          // live↔loop handover below is ramped. A source still fading
+          // out from a recent stopLoop is cut too.
+          cutFadingLoopSource(time)
+          stopLoopSource(time)
+          const source = bus.context.createBufferSource()
+          source.buffer = buffer
+          source.loop = true
+          source.connect(loopGain)
+          source.start(time)
+          loopSource = source
+          snapRamp(liveGain.gain, 0, time)
+          snapRamp(loopGain.gain, 1, time)
+          return true
+        },
+        stopLoop() {
+          if (!loopSource) return
+          const time = bus.context.currentTime
+          snapRamp(liveGain.gain, 1, time)
+          snapRamp(loopGain.gain, 0, time)
+          // The source rings through the down-ramp, then stops.
+          stopLoopSource(time + SNAP_AFTER_SECONDS)
+        },
+        clearLoop(slot) {
+          if (slot < 0 || slot >= LOOP_SLOT_COUNT) return
+          loopBuffers[slot] = null
+        },
         getLevel() {
           return rmsLevel(analyser, analyserBuffer)
         },
@@ -364,6 +496,10 @@ export function createAudioEngine(): AudioEngine {
         dispose() {
           worklet.port.onmessage = null
           worklet.disconnect()
+          cutFadingLoopSource(bus.context.currentTime)
+          stopLoopSource(bus.context.currentTime)
+          liveGain.disconnect()
+          loopGain.disconnect()
           for (const band of EQ_BANDS) eqNodes[band].disconnect()
           fxGraph?.dispose()
           for (const node of [fxDry, fxSend, fxWet, post]) node.disconnect()

@@ -7,6 +7,7 @@ import { ControlBusProvider } from '../control/ControlBusProvider'
 import { updateDeckSettings } from '../persistence'
 import { DeckColumn } from './DeckColumn'
 import { initialDeckState, type DeckState } from './deckState'
+import type { LoopState } from './useDeck'
 
 const noop = () => {}
 
@@ -15,6 +16,11 @@ function renderPanel(
   handlers: Record<string, () => void> = {},
   bus: ControlBus = createControlBus(),
   fx: { kind: FxKind | null; amount: number } = { kind: null, amount: 0 },
+  loop: LoopState = {
+    filled: [false, false, false, false],
+    active: null,
+    seconds: 4,
+  },
 ) {
   return render(
     <ControlBusProvider bus={bus}>
@@ -31,6 +37,14 @@ function renderPanel(
         fx={fx}
         onSetFx={(handlers.onSetFx as (k: unknown) => void) ?? noop}
         onSetFxAmount={(handlers.onSetFxAmount as (v: number) => void) ?? noop}
+        loop={loop}
+        onLoopPad={(handlers.onLoopPad as (slot: number) => void) ?? noop}
+        onClearLoopPad={
+          (handlers.onClearLoopPad as (slot: number) => void) ?? noop
+        }
+        onSetLoopSeconds={
+          (handlers.onSetLoopSeconds as (seconds: number) => void) ?? noop
+        }
       />
     </ControlBusProvider>,
   )
@@ -424,5 +438,56 @@ describe('DeckColumn', () => {
     act(() => bus.publish({ kind: 'style_target', deck: 'a', index: 0 }))
 
     expect(onSetStyle).not.toHaveBeenCalled()
+  })
+
+  it('fires a loop pad on click and a clear on shift-click', () => {
+    const onLoopPad = vi.fn()
+    const onClearLoopPad = vi.fn()
+    renderPanel(
+      { connection: 'open' },
+      {
+        onLoopPad: onLoopPad as () => void,
+        onClearLoopPad: onClearLoopPad as () => void,
+      },
+    )
+    const slot = screen.getByRole('button', { name: 'Loop slot 2' })
+
+    fireEvent.click(slot)
+    expect(onLoopPad).toHaveBeenCalledWith(1)
+    fireEvent.click(slot, { shiftKey: true })
+    expect(onClearLoopPad).toHaveBeenCalledWith(1)
+  })
+
+  it('shows the frozen status while a loop is on air', () => {
+    renderPanel(
+      { connection: 'open', playing: true },
+      {},
+      createControlBus(),
+      { kind: null, amount: 0 },
+      { filled: [true, false, false, false], active: 0, seconds: 4 },
+    )
+    expect(screen.getByText('Frozen — looping')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Loop slot 1' }),
+    ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('disables the loop slots while the deck cannot take them', () => {
+    renderPanel({ connection: 'closed' })
+    expect(
+      screen.getByRole('button', { name: 'Loop slot 1' }),
+    ).toBeDisabled()
+  })
+
+  it('changes the loop capture length', () => {
+    const onSetLoopSeconds = vi.fn()
+    renderPanel(
+      { connection: 'open' },
+      { onSetLoopSeconds: onSetLoopSeconds as () => void },
+    )
+    fireEvent.change(screen.getByLabelText('Loop length'), {
+      target: { value: '8' },
+    })
+    expect(onSetLoopSeconds).toHaveBeenCalledWith(8)
   })
 })

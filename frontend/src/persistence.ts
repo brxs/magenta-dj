@@ -4,6 +4,7 @@
 import type { DeckId } from './audio/engine'
 import { EQ_BANDS, type EqBand } from './audio/eq'
 import { FX_KINDS, type FxKind } from './audio/fx'
+import { LOOP_LENGTH_OPTIONS } from './audio/loops'
 import type { AudioOutputDevice } from './audio/outputs'
 import type { PadPoint } from './deck/padWeights'
 
@@ -13,6 +14,9 @@ export type DeckSettings = {
   volume: number
   eq: Record<EqBand, number>
   fx: { kind: FxKind | null; amount: number }
+  /** Freeze-pad capture length (M13). The loops themselves are
+   * session-only by design (ADR-0009). */
+  loopSeconds: number
 }
 
 export type AppSettings = {
@@ -100,6 +104,13 @@ export function loadDeckSettings(deckId: DeckId): Partial<DeckSettings> {
     Number.isFinite(fx.amount)
   ) {
     settings.fx = { kind: fx.kind, amount: clamp01(fx.amount as number) }
+  }
+  if (
+    LOOP_LENGTH_OPTIONS.includes(
+      stored.loopSeconds as (typeof LOOP_LENGTH_OPTIONS)[number],
+    )
+  ) {
+    settings.loopSeconds = stored.loopSeconds as number
   }
   return settings
 }

@@ -450,6 +450,182 @@ the cue feed previews effects on a primed deck; selection and amount
 survive a reload; curves and the mapping rows unit-tested; verified on
 the device against a checklist addendum.
 
+## M13 — Freeze pads: capture and loop the moment
+
+**Status: ✅ done (2026-06-11).** All four scope items shipped: ADR-0009
+(capture from the player ring's played history — what was heard, not
+what was queued — looped at the channel head behind a live/loop gain
+pair), the unit-tested seam and capture-bookkeeping math, the four-slot
+loop row with a persisted capture length, and the SAMPLER-bank mapping
+with truthful LEDs. Exit criteria verified on the physical device
+against [`m13-hardware-checklist.md`](m13-hardware-checklist.md) —
+every box ticked, including the monitor confirmation that the SAMPLER
+bank sits at the scheme's `0x30` base. Post-checklist hardware use
+caught one firmware fact the spot-check missed: held SHIFT moves the
+pads onto the shift pad layer (`0x98`/`0x9A`) instead of keeping their
+status like the soft-shifted CFX knob, so the clear chord listens
+there too.
+
+**Goal:** a generative deck never plays the same thing twice — which is
+the magic and the problem. When the model lands on something great,
+freeze the last bars into a loop, keep it on air, and re-steer the model
+underneath. The generative analog of a loop roll.
+
+Scope, ordered by risk:
+
+1. **Capture + playback design (ADR).** Per-deck ring buffer of the most
+   recent deck output, tapped raw (pre-EQ, the recorder-worklet pattern
+   from M5/M11) so EQ, Color FX, fader, and cue stay live on the loop.
+   Freeze swaps the channel source from the live stream to the captured
+   loop; the worker keeps generating into the now-silent stream so
+   unfreezing returns to fresh material — M10's deck prep already models
+   an inaudible running deck. The ADR records the tap point, the loop
+   scheduling (boundary crossfade against clicks), and what the live
+   stream does while frozen.
+2. **Loop engine.** Capture ring in a worklet; loop playback with a short
+   boundary crossfade; loop length adjustable in seconds (quantised to
+   whole beats once M14 lands). Scheduling math pure and unit-tested.
+3. **UI.** Freeze control and loop length per deck; the waveform strip
+   shows frozen state. Loops are session-only — captured audio is
+   deliberately not persisted.
+4. **Hardware.** Loop slots on a spare FLX4 pad bank — the 0x10-per-bank
+   scheme puts SAMPLER at a predictable base, but confirm with the
+   in-app monitor before mapping, exactly as PAD FX was in M12. Empty
+   pad captures, lit pad plays, re-press returns to live; LEDs truthful
+   throughout.
+
+**Exit criteria:** while a deck plays, freezing loops the last bars
+seamlessly on air with EQ and Color FX still live; unfreezing returns to
+the live stream without a glitch or underrun; the style pad can re-steer
+the model while frozen and the new material is there on release; pads
+capture and trigger from the FLX4 with truthful LEDs; capture and
+scheduling math unit-tested; verified on the device against a checklist
+addendum.
+
+## M14 — Beat detection: a tempo estimate from the output
+
+**Status: ⬜ planned.**
+
+**Goal:** ADR-0004 stands — tempo is not a *generation* parameter — but
+detecting tempo on the generated stream is a different question. A
+confident BPM estimate unlocks the beat-aware features the booth forgoes
+today: tempo-synced Dub Echo, beat-trimmed M13 loops, and an honest BPM
+readout per deck.
+
+Scope, ordered by risk:
+
+1. **Spike: is generative output beat-trackable?** Onset detection plus
+   autocorrelation over recorded WAVs across styles (four-on-the-floor
+   techno through ambient), building on [`spike-bpm.md`](spike-bpm.md).
+   The deliverable is a measured confidence gate: when the estimator is
+   unsure it must show nothing, never a wrong number. Kill criterion: if
+   no style family yields a stable estimate, the milestone parks here —
+   the spike is the risk, like M9's routing spike.
+2. **Live estimator.** Per-deck onset/tempo tracker producing
+   `{bpm, confidence, phase}`; the deck status shows BPM only above the
+   gate.
+3. **Consumers.** Dub Echo gains a synced mode (delay snaps to a beat
+   fraction) at high confidence and stays free-running otherwise; M13
+   loop lengths quantise to whole beats when available; *(stretch)* a
+   beat-pulsing LED on a spare button.
+
+**Exit criteria:** on a steady rhythmic stream the estimate holds within
+±2% of a hand-counted reference for a minute; on beatless material the
+readout honestly shows nothing; synced Dub Echo audibly locks to the
+groove; estimator math unit-tested against synthetic click tracks and
+recorded fixtures.
+
+## M15 — Deck-to-deck style transfer: "sound like deck A"
+
+**Status: ⬜ planned.**
+
+**Goal:** MRT styles can come from reference audio, not just text — and
+the most useful reference in a booth is the *other deck*. One action puts
+"the sound of deck A, right now" on deck B's style pad as a blendable
+target: a harmonic-mixing substitute for a world with no key or tempo
+grid.
+
+Scope, ordered by risk:
+
+1. **Spike: style-from-audio quality (ADR).** Embed ~10 s of generated
+   output through MRT's audio-style path and apply it to the other deck;
+   judge resemblance by ear and measure embedding latency — it must not
+   stall either generating stream (the same isolation rule as everything
+   in `engine.py`). The ADR records capture length, where the embedding
+   runs, and the caching model (audio embeddings cache like text-prompt
+   embeddings).
+2. **Capture → worker path.** The recorder-worklet + WebSocket pattern
+   from M11 ships the last N seconds of a deck upstream; the worker
+   embeds once and caches.
+3. **UI + pad integration.** The captured style lands on the style pad
+   as a target like any text prompt (labelled as sampled from the other
+   deck): weight-blendable, re-sampleable, removable. Persistence is an
+   ADR decision — embeddings don't survive a worker restart, so the
+   honest options are session-only or persisting the captured clip.
+4. ***(Stretch)* file-drop styles** — drop an audio file on the pad as a
+   style target; subsumes the previously parked "audio-prompt styles"
+   idea.
+
+**Exit criteria:** with deck A playing, one action adds an "A, sampled
+now" target to deck B's pad; at full weight B audibly shifts toward A's
+character; the target blends with text targets by weight like any other;
+neither stream glitches during capture or embedding; the spike's
+resemblance and latency findings are recorded in the ADR.
+
+## M16 — Crates: a library of saved styles
+
+**Status: ⬜ planned.**
+
+**Goal:** a set shouldn't be retyped. Save a deck's pad arrangement as a
+named preset, organise presets into crates, and load them mid-set — from
+the FLX4's browse controls, no laptop needed.
+
+Scope:
+
+1. **Preset model + storage.** Name + pad targets and weights (+ the
+   deck's Color FX selection), stored like the rest of persistence
+   (`persistence.ts`); JSON export/import for backup and sharing.
+2. **UI.** Save-as-preset on the deck, a crate browser, load-to-deck;
+   loading re-embeds prompts exactly like typing them (cached embeddings
+   make repeats cheap).
+3. **Hardware.** The FLX4 browse rotary (turn = highlight, press/LOAD =
+   load to deck) — bytes from the Mixxx map, verified with the in-app
+   monitor before wiring, mapping rows unit-tested like every table
+   since M7.
+
+**Exit criteria:** save a preset, reload the app, browse crates from the
+rotary, and load onto deck B while deck A keeps playing uninterrupted;
+export/import round-trips; mapping rows unit-tested; verified on the
+device against a checklist addendum.
+
+## M17 — Master housekeeping: limiter and gain match
+
+**Status: ⬜ planned.**
+
+**Goal:** every real mixer protects its output. Stacked EQ boosts plus
+Color FX can push the master past full scale, and decks differ in
+inherent loudness; both problems are silent until they ruin a recording.
+
+Scope:
+
+1. **Master limiter.** A limiter ahead of both `context.destination` and
+   the recorder tap (the WAV captures what was heard). Start with a
+   DynamicsCompressorNode configured as a limiter; reach for a lookahead
+   worklet only if measurement shows pumping. The master meter shows
+   gain reduction.
+2. **Per-deck auto-gain.** A slow loudness tracker per deck feeding a
+   trim gain so decks land at comparable level through matched faders;
+   manual trim override; channel meters read post-trim.
+3. **Measured verification, not vibes** (the M6 pattern): an e2e records
+   the master under deliberately hot settings (full EQ boost + Crush)
+   and asserts the WAV's peak stays under the ceiling; gain match is
+   asserted as an RMS delta between two decks of different loudness.
+
+**Exit criteria:** the recorded master never exceeds the ceiling under a
+deliberately hot mix; two decks of clearly different loudness land
+within ~1 dB through matched faders; trims and levels persist; verified
+by level measurement in e2e like M6.
+
 ## Later (not committed)
 
 Ideas parked deliberately — each would get its own ADR if picked up:
@@ -461,9 +637,8 @@ Ideas parked deliberately — each would get its own ADR if picked up:
 - **Controller LED/display feedback beyond M7's stretch and M10's cue
   LEDs** — full bidirectional surface state (requires the FLX4 output
   map).
-- **Audio-prompt styles** — MRT styles can come from reference audio, not just
-  text: "make deck B sound like this track".
-- **Prompt/preset library** with crates of saved styles.
+- **Style motion** — automate the style-pad cursor (LFO between targets,
+  or record a pad gesture and loop it) so a deck evolves hands-free.
 
 ## Standing risks
 

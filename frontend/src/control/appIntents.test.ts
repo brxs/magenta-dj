@@ -14,6 +14,10 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     fx: { kind: null, amount: 0 },
     setFx: vi.fn(),
     setFxAmount: vi.fn(),
+    loop: { filled: [false, false, false, false], active: null, seconds: 4 },
+    toggleLoopPad: vi.fn(),
+    clearLoopPad: vi.fn(),
+    setLoopSeconds: vi.fn(),
     primed: false,
     prime: vi.fn(async () => {}),
     play: vi.fn(async () => {}),
@@ -140,6 +144,26 @@ describe('applyAppIntent', () => {
     const a = fakeDeck()
     applyAppIntent({ kind: 'fx_select', deck: 'a', index: 7 }, decks(a), noHandlers)
     expect(a.setFx).not.toHaveBeenCalled()
+  })
+
+  it('routes loop pads to the addressed deck', () => {
+    const a = fakeDeck()
+    const b = fakeDeck()
+    applyAppIntent({ kind: 'loop_pad', deck: 'b', index: 2 }, decks(a, b), noHandlers)
+    expect(b.toggleLoopPad).toHaveBeenCalledWith(2)
+    expect(a.toggleLoopPad).not.toHaveBeenCalled()
+  })
+
+  it('routes loop clears to the addressed deck', () => {
+    const a = fakeDeck()
+    const b = fakeDeck()
+    applyAppIntent(
+      { kind: 'loop_clear', deck: 'a', index: 0 },
+      decks(a, b),
+      noHandlers,
+    )
+    expect(a.clearLoopPad).toHaveBeenCalledWith(0)
+    expect(b.clearLoopPad).not.toHaveBeenCalled()
   })
 
   it('hands crossfade to the callback', () => {

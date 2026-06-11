@@ -53,6 +53,13 @@ remains the verification tool.
 | HEADPHONES MIX knob | `0xB6` CC `0x0C` (LSB `0x2C`) | cue↔master blend in the phones — it sends MIDI, unlike a typical analog monitor knob |
 | CUE (transport) deck 1 / 2 | `0x90`/`0x91` note `0x0C` | deck prep: prime off air / stop with flush; LED lit while primed |
 
+## Mapped in M13 (freeze loops)
+
+| Control | Message | → App intent |
+| ------- | ------- | ------------ |
+| Pads 1–4, SAMPLER mode, deck 1 / 2 | `0x97`/`0x99` notes `0x30`–`0x33` | freeze-loop slot: empty captures + freezes, filled swaps in, active returns to live; LED lit while filled. Bank base `0x30` confirmed by the 0x10-per-bank scheme |
+| SHIFT + SAMPLER pad, deck 1 / 2 | `0x98`/`0x9A` notes `0x30`–`0x33` | clear the slot. Held SHIFT moves pads onto the shift pad layer — pads are **not** soft-shifted like the CFX knob (found on hardware: the `0x97`/`0x99` soft-shift path never fired). The translator keeps the soft-shift rows as well, in case other firmware keeps the pads put |
+
 On audio: the FLX4's USB sound card exposes 4 output channels at 48 kHz
 (measured via `system_profiler`) — 1/2 feed the MASTER RCA, 3/4 the
 headphone jack — but Chromium caps Web Audio output at stereo per sink,
@@ -61,9 +68,11 @@ second output device instead (ADR-0006).
 
 ## Useful spares for later
 
-- Pad modes other than HOT CUE send distinct note ranges (BEAT LOOP
-  `0x60`–`0x67`, BEAT JUMP `0x20`–`0x27`, KEY SHIFT `0x70`–`0x77`) — free
-  banks for future intents (preset crates?).
+- Pad modes other than HOT CUE, PAD FX, and SAMPLER send distinct note
+  ranges (BEAT LOOP `0x60`–`0x67`, BEAT JUMP `0x20`–`0x27`, KEY SHIFT
+  `0x70`–`0x77`) — free banks for future intents (preset crates?).
+- SAMPLER pads 5–8 (`0x34`–`0x37`) are unmapped; more loop slots if four
+  prove tight.
 
 ## LED feedback (M7 stretch)
 
