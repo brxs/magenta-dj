@@ -32,7 +32,7 @@ Reading the disagreements honestly:
   show its second candidate (a 4:3 relation). Both are defensible
   readings of the same groove; the hardware checklist's hand-count is
   the final arbiter.
-- **hiphop 189.5 vs 95.3** — librosa's top tempogram candidate is
+- **hiphop 188.5 vs 95.3** — librosa's top tempogram candidate is
   187.5; its `beat_track` default picked the half. We show the level
   the tempogram itself ranks first.
 - **triphop blank** — correct: librosa's tempogram has no candidate
