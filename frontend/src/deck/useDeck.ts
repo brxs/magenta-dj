@@ -8,6 +8,7 @@ import {
   LOOP_SLOT_COUNT,
   quantiseLoopSeconds,
 } from '../audio/loops'
+import { createLoudnessTracker, trimDbFor } from '../audio/master'
 import { STYLE_SAMPLE_SECONDS } from '../audio/styleSample'
 import { useAudioEngine } from '../audio/engineContext'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
@@ -21,6 +22,10 @@ import {
 } from './deckState'
 
 const RECONNECT_DELAY_MS = 2_000
+
+/** Gain-staging trim (M17): auto follows the source's loudness; a
+ * manual knob move takes over until auto is re-engaged. */
+export type TrimState = { mode: 'auto' | 'manual'; db: number }
 
 export type LoopState = {
   /** Which slots hold a captured loop (the buffers live in the channel). */
@@ -58,6 +63,11 @@ export type DeckControls = {
   /** Style sampling (M15): the just-played tail as wire-format PCM,
    * or null when the deck has not played enough to embed. */
   captureStyleSample: () => Promise<Float32Array<ArrayBuffer> | null>
+  /** Per-channel trim (M17): auto-gain toward the loudness target, or
+   * a held manual value. */
+  trim: TrimState
+  setTrimDb: (db: number) => void
+  enableAutoTrim: () => void
   /** Generating but off air (M10): buffer fills, only the cue tap hears
    * it. play() then drops it on air without flushing what was built up. */
   primed: boolean
@@ -106,19 +116,36 @@ export function useDeck(deckId: DeckId): DeckControls {
   // gesture bumps this, and the capture callback bails if it moved.
   const loopGestureRef = useRef(0)
   const [bpm, setBpm] = useState<number | null>(null)
-  // Tracker + gate per deck (M14), reset on stream discontinuities so
-  // an estimate never spans two unrelated streams (the reset rule the
-  // capture history follows too, ADR-0009).
+  // Tracker + gate per deck (M14), and the loudness tracker behind
+  // auto-gain (M17) — all reset on stream discontinuities so an
+  // estimate never spans two unrelated streams (the reset rule the
+  // capture history follows too, ADR-0009). The trim VALUE holds
+  // across resets; only the measurement starts over.
   const [beat] = useState(() => ({
     tracker: createBeatTracker(SAMPLE_RATE),
     gate: createBeatGate(),
   }))
-  const resetBeat = useCallback(() => {
+  const [loudness] = useState(() => createLoudnessTracker(SAMPLE_RATE))
+  const resetStreamMeasurements = useCallback(() => {
     beat.tracker.reset()
     beat.gate.reset()
+    loudness.reset()
     channelRef.current?.setBeatPeriod(null)
     setBpm(null)
-  }, [beat])
+  }, [beat, loudness])
+  const [trim, setTrimState] = useState<TrimState>(
+    () => loadDeckSettings(deckId).trim ?? { mode: 'auto', db: 0 },
+  )
+  const trimRef = useRef(trim)
+  const applyTrim = useCallback(
+    (next: TrimState) => {
+      setTrimState(next)
+      trimRef.current = next
+      updateDeckSettings(deckId, { trim: next })
+      channelRef.current?.setTrim(next.db)
+    },
+    [deckId],
+  )
   const [primed, setPrimedState] = useState(false)
   const primedRef = useRef(primed)
 
@@ -143,6 +170,7 @@ export function useDeck(deckId: DeckId): DeckControls {
             eq: eqRef.current,
             cue: cueRef.current,
             fx: fxRef.current,
+            trimDb: trimRef.current.db,
           },
           (stats) => dispatch({ type: 'worklet_stats', stats }),
         )
@@ -174,10 +202,11 @@ export function useDeck(deckId: DeckId): DeckControls {
       socket.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           const samples = new Float32Array(event.data)
-          // Beat tracking reads first — postPcm transfers the buffer
-          // away. (The feed runs ahead of the speakers by the buffer
-          // lead; tempo doesn't care, ADR-0010.)
+          // Beat and loudness tracking read first — postPcm transfers
+          // the buffer away. (The feed runs ahead of the speakers by
+          // the buffer lead; neither measurement cares, ADR-0010.)
           beat.tracker.push(samples)
+          loudness.push(samples)
           channelRef.current?.postPcm(samples)
         } else {
           let parsed: ServerEvent
@@ -192,7 +221,7 @@ export function useDeck(deckId: DeckId): DeckControls {
             // a crashed deck goes silent rather than draining its tail under
             // the crash banner. The beat tracker forgets it too.
             channelRef.current?.reset()
-            resetBeat()
+            resetStreamMeasurements()
           }
           dispatch({ type: 'server_event', event: parsed })
         }
@@ -213,11 +242,13 @@ export function useDeck(deckId: DeckId): DeckControls {
       channelRef.current = null
       channelPromiseRef.current = null
     }
-  }, [deckId, beat, resetBeat])
+  }, [deckId, beat, loudness, resetStreamMeasurements])
 
   // One estimate per second through the honesty gate (M14); the state
   // setter is a no-op re-render-wise while the gated value holds. The
-  // channel follows so the synced dub echo has its clock.
+  // channel follows so the synced dub echo has its clock. Auto-gain
+  // (M17) rides the same tick: a slow glide toward the loudness
+  // target, held when the tracker has nothing trustworthy.
   useEffect(() => {
     const timer = setInterval(() => {
       const displayed = beat.gate.push(beat.tracker.estimate())
@@ -225,9 +256,15 @@ export function useDeck(deckId: DeckId): DeckControls {
       channelRef.current?.setBeatPeriod(
         displayed === null ? null : 60 / displayed,
       )
+      if (trimRef.current.mode === 'auto') {
+        const db = trimDbFor(loudness.rms())
+        if (db !== null && Math.abs(db - trimRef.current.db) > 0.1) {
+          applyTrim({ mode: 'auto', db })
+        }
+      }
     }, 1_000)
     return () => clearInterval(timer)
-  }, [beat])
+  }, [beat, loudness, applyTrim])
 
   const send = useCallback((command: object) => {
     const socket = socketRef.current
@@ -251,7 +288,7 @@ export function useDeck(deckId: DeckId): DeckControls {
       // first thing heard is the new stream, not stale chunks. The beat
       // tracker starts over with the stream.
       channel.reset()
-      resetBeat()
+      resetStreamMeasurements()
       channel.setOnAir(true)
     } catch (error) {
       dispatch({
@@ -262,7 +299,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     }
     send({ type: 'play' })
     dispatch({ type: 'play_requested' })
-  }, [ensureChannel, engine, send, setPrimed, resetBeat])
+  }, [ensureChannel, engine, send, setPrimed, resetStreamMeasurements])
 
   /** Start generating off air: like play(), but muted on the master so
    * the prep is only audible over the cue tap (M10 transport CUE). */
@@ -272,7 +309,7 @@ export function useDeck(deckId: DeckId): DeckControls {
       const channel = await ensureChannel()
       await engine.resume()
       channel.reset()
-      resetBeat()
+      resetStreamMeasurements()
       channel.setOnAir(false)
     } catch (error) {
       dispatch({
@@ -284,7 +321,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     setPrimed(true)
     send({ type: 'play' })
     dispatch({ type: 'play_requested' })
-  }, [ensureChannel, engine, send, setPrimed, resetBeat])
+  }, [ensureChannel, engine, send, setPrimed, resetStreamMeasurements])
 
   const stop = useCallback(() => {
     send({ type: 'stop' })
@@ -300,10 +337,10 @@ export function useDeck(deckId: DeckId): DeckControls {
     if (loopRef.current.active !== null) {
       setLoop({ ...loopRef.current, active: null })
     }
-    resetBeat()
+    resetStreamMeasurements()
     setPrimed(false)
     dispatch({ type: 'stop_requested' })
-  }, [send, setPrimed, setLoop, resetBeat])
+  }, [send, setPrimed, setLoop, resetStreamMeasurements])
 
   const setStyle = useCallback(
     (style: ActiveStyle) => {
@@ -347,6 +384,18 @@ export function useDeck(deckId: DeckId): DeckControls {
     () => channelRef.current?.captureSample(STYLE_SAMPLE_SECONDS) ?? Promise.resolve(null),
     [],
   )
+
+  const setTrimDb = useCallback(
+    (db: number) => applyTrim({ mode: 'manual', db }),
+    [applyTrim],
+  )
+
+  const enableAutoTrim = useCallback(() => {
+    // Snap to the tracker's current opinion when it has one; the next
+    // tick keeps following either way.
+    const db = trimDbFor(loudness.rms())
+    applyTrim({ mode: 'auto', db: db ?? trimRef.current.db })
+  }, [applyTrim, loudness])
 
   const setCue = useCallback((on: boolean) => {
     setCueState(on)
@@ -477,6 +526,9 @@ export function useDeck(deckId: DeckId): DeckControls {
     setLoopSeconds,
     bpm,
     captureStyleSample,
+    trim,
+    setTrimDb,
+    enableAutoTrim,
     primed,
     prime,
     play,

@@ -38,6 +38,7 @@ function makeEngine(overrides: Partial<AudioEngine> = {}): AudioEngine {
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob(['x'], { type: 'audio/wav' })),
     getMasterLevel: vi.fn(() => 0),
+    getMasterGainReduction: vi.fn(() => 0),
     ...overrides,
   }
 }
@@ -47,9 +48,12 @@ function makeChannel(overrides: Partial<ChannelControls> = {}): ChannelControls 
     volume: 0.8,
     eq: { low: 0.5, mid: 0.5, high: 0.5 },
     cue: false,
+    trim: { mode: 'auto' as const, db: 0 },
     onSetVolume: vi.fn(),
     onSetEqBand: vi.fn(),
     onSetCue: vi.fn(),
+    onSetTrimDb: vi.fn(),
+    onEnableAutoTrim: vi.fn(),
     getLevel: () => 0,
     ...overrides,
   }
@@ -245,4 +249,46 @@ describe('MixerStrip headphone cue', () => {
       expect(screen.getByRole('alert')).toHaveTextContent('sink gone'),
     )
   })
+
+  it('moves a channel trim manually and re-engages auto', () => {
+    const a = makeChannel({ trim: { mode: 'manual', db: 0 } })
+    renderMixer(makeEngine(), { channels: { a, b: makeChannel() } })
+    const channelA = screen.getByRole('group', { name: 'Channel a' })
+
+    const trim = within(channelA).getByLabelText('Trim')
+    // Knob is a native range input under the dial: 0.75 of the sweep
+    // maps to +6 dB on the ±12 dB trim range.
+    fireEvent.change(trim, { target: { value: '0.75' } })
+    expect(a.onSetTrimDb).toHaveBeenCalledWith(6)
+
+    fireEvent.click(within(channelA).getByRole('button', { name: 'Auto' }))
+    expect(a.onEnableAutoTrim).toHaveBeenCalled()
+  })
+
+  it('lights AUTO while the trim follows the source', () => {
+    renderMixer(makeEngine(), {
+      channels: {
+        a: makeChannel({ trim: { mode: 'auto', db: 3 } }),
+        b: makeChannel({ trim: { mode: 'manual', db: 0 } }),
+      },
+    })
+    const [autoA, autoB] = screen.getAllByRole('button', { name: 'Auto' })
+    expect(autoA).toHaveAttribute('aria-pressed', 'true')
+    expect(autoB).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('shows the limiter gain reduction only while it is working', () => {
+    vi.useFakeTimers()
+    try {
+      const engine = makeEngine({ getMasterGainReduction: vi.fn(() => -3.2) })
+      renderMixer(engine)
+      const stat = screen.getByText('Limiter').parentElement!
+      expect(stat).toHaveTextContent('—')
+      act(() => void vi.advanceTimersByTime(300))
+      expect(stat).toHaveTextContent('-3.2 dB')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
 })

@@ -66,6 +66,7 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     setFx: vi.fn(),
     setFxAmount: vi.fn(),
     setBeatPeriod: vi.fn(),
+    setTrim: vi.fn(),
     setOnAir: vi.fn(),
     captureLoop: vi.fn(async () => true),
     playLoop: vi.fn(() => true),
@@ -87,6 +88,7 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob()),
     getMasterLevel: vi.fn(() => 0),
+    getMasterGainReduction: vi.fn(() => 0),
     ...overrides,
   }
   return { engine, channel }
@@ -422,6 +424,77 @@ describe('useDeck beat readout', () => {
     // The next tick has no accumulated audio: still nothing.
     act(() => void vi.advanceTimersByTime(1_000))
     expect(result.current.bpm).toBeNull()
+  })
+})
+
+describe('useDeck trim (auto-gain)', () => {
+  function streamConstant(amplitude: number, seconds: number) {
+    const chunk = new Float32Array(1920 * 2).fill(amplitude)
+    const chunks = Math.ceil((seconds * 48_000) / 1920)
+    act(() => {
+      for (let i = 0; i < chunks; i++) {
+        socket(0).onmessage?.({ data: chunk.slice().buffer })
+      }
+    })
+  }
+
+  it('auto-trims a quiet stream up toward the loudness target', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+
+    // Constant 0.075 → RMS 0.075, half the 0.15 target → +6 dB.
+    streamConstant(0.075, 12)
+    act(() => void vi.advanceTimersByTime(1_000))
+    expect(result.current.trim.mode).toBe('auto')
+    expect(result.current.trim.db).toBeCloseTo(6, 0)
+    expect(vi.mocked(channel.setTrim).mock.calls.at(-1)![0]).toBeCloseTo(6, 0)
+  })
+
+  it('holds the trim over silence instead of winding up', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+
+    streamConstant(0, 12)
+    act(() => void vi.advanceTimersByTime(2_000))
+    expect(result.current.trim.db).toBe(0)
+    expect(channel.setTrim).not.toHaveBeenCalled()
+  })
+
+  it('a manual move takes over until AUTO re-engages', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+
+    act(() => result.current.setTrimDb(-3))
+    expect(result.current.trim).toEqual({ mode: 'manual', db: -3 })
+    expect(channel.setTrim).toHaveBeenLastCalledWith(-3)
+
+    // Auto must not fight the manual value on the next tick.
+    streamConstant(0.075, 12)
+    act(() => void vi.advanceTimersByTime(1_000))
+    expect(result.current.trim).toEqual({ mode: 'manual', db: -3 })
+
+    act(() => result.current.enableAutoTrim())
+    expect(result.current.trim.mode).toBe('auto')
+    expect(result.current.trim.db).toBeCloseTo(6, 0)
+  })
+
+  it('restores the persisted trim and seeds the channel with it', async () => {
+    updateDeckSettings('a', { trim: { mode: 'manual', db: -4.5 } })
+    const { engine } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    expect(result.current.trim).toEqual({ mode: 'manual', db: -4.5 })
+
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+    expect(vi.mocked(engine.createDeckChannel).mock.calls[0][1]).toMatchObject({
+      trimDb: -4.5,
+    })
   })
 })
 

@@ -5,6 +5,7 @@ import type { DeckId } from './audio/engine'
 import { EQ_BANDS, type EqBand } from './audio/eq'
 import { FX_KINDS, type FxKind } from './audio/fx'
 import { LOOP_LENGTH_OPTIONS } from './audio/loops'
+import { TRIM_RANGE_DB } from './audio/master'
 import type { AudioOutputDevice } from './audio/outputs'
 import type { PadPoint } from './deck/padWeights'
 import { clamp01, isPoint, parsePreset, type StylePreset } from './presets'
@@ -18,6 +19,8 @@ export type DeckSettings = {
   /** Freeze-pad capture length (M13). The loops themselves are
    * session-only by design (ADR-0009). */
   loopSeconds: number
+  /** Gain-staging trim (M17): the mode and the held/last value. */
+  trim: { mode: 'auto' | 'manual'; db: number }
 }
 
 export type AppSettings = {
@@ -99,6 +102,18 @@ export function loadDeckSettings(deckId: DeckId): Partial<DeckSettings> {
     )
   ) {
     settings.loopSeconds = stored.loopSeconds as number
+  }
+  const trim = stored.trim
+  if (
+    trim &&
+    typeof trim === 'object' &&
+    (trim.mode === 'auto' || trim.mode === 'manual') &&
+    Number.isFinite(trim.db)
+  ) {
+    settings.trim = {
+      mode: trim.mode,
+      db: Math.max(-TRIM_RANGE_DB, Math.min(TRIM_RANGE_DB, trim.db as number)),
+    }
   }
   return settings
 }

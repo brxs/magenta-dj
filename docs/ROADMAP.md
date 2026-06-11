@@ -642,7 +642,28 @@ device against a checklist addendum.
 
 ## M17 — Master housekeeping: limiter and gain match
 
-**Status: ⬜ planned.**
+**Status: ✅ done (2026-06-11).** All three scope items shipped: the
+master runs through a compressor-as-limiter plus a hard clip guard at
+a binary-exact ceiling (119/128 — float32 cannot round above it),
+with the meter, the recorder, and the phones' master blend all
+tapping post-limiter and the gain reduction shown in the mixer; each
+channel gains an auto-gain Trim at its chain head (pre-EQ, live
+stream and freeze loops alike) that follows a deliberately slow
+loudness tracker toward the target, holds over silence, yields to a
+manual move, and persists both mode and value. The review loop
+surfaced (and the design now cancels) the compressor's spec-mandated
+implicit makeup gain (~+3.4 dB on everything), so the limiter is
+level-transparent until it works and the clip guard is a backstop
+rather than a routine stage. Exit criteria verified by measurement
+(`verify_m17.mjs`, the M6 pattern, against a live server, re-measured
+after the compensation): the deliberately hot mix (+12 dB trim, full
+EQ boosts, Crush at max, fader at the top) recorded with peak 0.708 —
+under the 0.9297 ceiling — while the limiter showed −13.1 dB of
+reduction; a loud and a quiet deck on AUTO landed **0.52 dB** apart
+through matched faders; and the trims survived a reload exactly. One
+measured lesson kept in the script: sparse material (solo piano) is
+the wrong gain-match probe — its phrase-to-phrase variance outruns
+the deliberately slow tracker.
 
 **Goal:** every real mixer protects its output. Stacked EQ boosts plus
 Color FX can push the master past full scale, and decks differ in

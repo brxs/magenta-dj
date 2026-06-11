@@ -5,6 +5,7 @@ import { EQ_BANDS, type EqBand } from '../audio/eq'
 import type { DeckId } from '../audio/engine'
 import { useAudioEngine } from '../audio/engineContext'
 import { listCueJackOutputs } from '../audio/cueStream'
+import { TRIM_RANGE_DB } from '../audio/master'
 import { listAudioOutputs, type AudioOutputDevice } from '../audio/outputs'
 import { useControlBus } from '../control/busContext'
 import { Button } from '../ui/Button'
@@ -12,6 +13,7 @@ import { Knob } from '../ui/Knob'
 import { LevelMeter } from '../ui/LevelMeter'
 import { Select } from '../ui/Select'
 import { Slider } from '../ui/Slider'
+import { Stat } from '../ui/Stat'
 import { VerticalFader } from '../ui/VerticalFader'
 import './mixer.css'
 
@@ -19,9 +21,14 @@ export type ChannelControls = {
   volume: number
   eq: Record<EqBand, number>
   cue: boolean
+  /** Gain-staging trim (M17): auto follows source loudness, a knob
+   * move takes over, AUTO re-engages. */
+  trim: { mode: 'auto' | 'manual'; db: number }
   onSetVolume: (value: number) => void
   onSetEqBand: (band: EqBand, value: number) => void
   onSetCue: (on: boolean) => void
+  onSetTrimDb: (db: number) => void
+  onEnableAutoTrim: () => void
   getLevel: () => number
 }
 
@@ -73,6 +80,16 @@ export function MixerStrip({
   // null = not scanned yet; the saved device still shows as an option.
   const [cueOutputs, setCueOutputs] = useState<AudioOutputDevice[] | null>(null)
   const [phonesError, setPhonesError] = useState<string | null>(null)
+  // The limiter's gain reduction, polled gently — it is a health
+  // readout, not a meter.
+  const [gainReduction, setGainReduction] = useState(0)
+  useEffect(() => {
+    const ticker = setInterval(
+      () => setGainReduction(engine.getMasterGainReduction()),
+      250,
+    )
+    return () => clearInterval(ticker)
+  }, [engine])
 
   async function scanCueOutputs() {
     try {
@@ -161,6 +178,27 @@ export function MixerStrip({
             role="group"
             aria-label={t('mixer.channel', { id: deckId })}
           >
+            {/* Trim sits above the EQ like a hardware channel strip;
+                the knob shows the live value even while auto rides it. */}
+            <Knob
+              label={t('mixer.trim')}
+              value={
+                (channels[deckId].trim.db + TRIM_RANGE_DB) / (2 * TRIM_RANGE_DB)
+              }
+              accent={deckId}
+              onChange={(value) =>
+                channels[deckId].onSetTrimDb(
+                  value * 2 * TRIM_RANGE_DB - TRIM_RANGE_DB,
+                )
+              }
+            />
+            <Button
+              lit={channels[deckId].trim.mode === 'auto'}
+              aria-pressed={channels[deckId].trim.mode === 'auto'}
+              onClick={channels[deckId].onEnableAutoTrim}
+            >
+              {t('mixer.trimAuto')}
+            </Button>
             {eqDisplayOrder.map((band) => (
               <Knob
                 key={band}
@@ -242,6 +280,15 @@ export function MixerStrip({
 
       <div className="mixer__master">
         <LevelMeter label={t('mixer.masterLevel')} getLevel={engine.getMasterLevel} />
+        <Stat
+          label={t('mixer.limiter')}
+          value={
+            gainReduction < -0.5
+              ? t('mixer.limiterDb', { db: gainReduction.toFixed(1) })
+              : t('deck.health.noData')
+          }
+          tone={gainReduction < -6 ? 'danger' : 'default'}
+        />
         <div className="mixer__record">
           <Button onClick={() => void toggleRecording()} disabled={busy}>
             {recording ? t('mixer.stopRecording') : t('mixer.record')}

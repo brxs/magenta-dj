@@ -64,6 +64,7 @@ function makeEngine(): AudioEngine {
     startRecording: vi.fn(async () => {}),
     stopRecording: vi.fn(async () => new Blob()),
     getMasterLevel: vi.fn(() => 0),
+    getMasterGainReduction: vi.fn(() => 0),
   }
 }
 
