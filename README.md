@@ -58,6 +58,9 @@ cluster them), and ride the crossfader between decks.
   other deck, right now" on a deck's style pad as a blendable target;
   sampled targets are session-only by design
   ([ADR-0011](docs/adr/0011-deck-to-deck-style-sampling-via-audio-embeddings.md)).
+- **Crates** — save a deck's pad + Color FX as a named preset, browse
+  the crate from the FLX4's rotary, and load onto either deck mid-set;
+  export/import as JSON for backup and sharing.
 - **Headphone cue** — hit a channel's **Cue**, ride the **Cue mix** knob
   between cue and master, and pick a **Phones out**: any output device the
   browser can reach, or the FLX4's own headphone jack, which is fed by the
@@ -84,6 +87,8 @@ plain MIDI works too, minus position sync). Mapped controls:
   **HOT CUE** pads pick style targets; **SAMPLER** pads freeze loops
   (SHIFT + pad clears a slot)
 - **HEADPHONES MIX** knob — cue mix
+- **Browse rotary + LOAD buttons** — highlight a crate preset, load it
+  onto deck 1 or 2
 
 Knob and fader positions sync from the hardware on connect, and the LEDs
 mirror app state. The measured byte map lives in

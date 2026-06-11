@@ -67,6 +67,14 @@ const CC_DECK: Partial<Record<number, DeckId>> = { 0xb0: 'a', 0xb1: 'b' }
 const MIXER_STATUS = 0xb6
 const LSB_OFFSET = 0x20
 const MAX_14BIT = (127 << 7) | 127
+/** Browse rotary (M16): a RELATIVE encoder on the mixer status — small
+ * values are clockwise clicks, values above 0x40 are two's-complement
+ * counter-clockwise. Handled before the 14-bit CC pipeline, which
+ * would otherwise mangle relative ticks into absolute positions. */
+const BROWSE_CC = 0x40
+/** LOAD buttons (M16): their own status byte, one note per deck. */
+const LOAD_STATUS = 0x96
+const LOAD_NOTE_DECK: Partial<Record<number, DeckId>> = { 0x46: 'a', 0x47: 'b' }
 
 /** Builders keyed by MSB CC number, per status byte. The LSB lives on
  * CC+0x20 and is resolved back to these entries. Resolved per message,
@@ -159,6 +167,10 @@ function buttonIntent(
   if (BEAT_FX_STATUSES.includes(status) && note === RECORD_NOTE) {
     return { kind: 'record_toggle' }
   }
+  const loadDeck = LOAD_NOTE_DECK[note]
+  if (status === LOAD_STATUS && loadDeck) {
+    return { kind: 'crate_load', deck: loadDeck }
+  }
   return null
 }
 
@@ -177,6 +189,18 @@ export function createFlx4Translator(): Flx4Translator {
     if (shiftDeck && number === SHIFT_NOTE) {
       shiftHeld[shiftDeck] = value > 0
       return null
+    }
+
+    // The browse rotary is relative — its CC must not enter the
+    // absolute MSB/LSB machinery below. The magnitude is real: a fast
+    // turn packs several clicks into one message (0x02 = two CW,
+    // 0x7E = two CCW in two's complement).
+    if (status === MIXER_STATUS && number === BROWSE_CC) {
+      if (value === 0 || value === 0x40) return null
+      return {
+        kind: 'crate_scroll',
+        steps: value < 0x40 ? value : value - 0x80,
+      }
     }
 
     const msbBuild = ccBuilder(status, number, shiftHeld)

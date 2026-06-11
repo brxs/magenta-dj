@@ -603,7 +603,20 @@ resemblance and latency findings are recorded in the ADR.
 
 ## M16 — Crates: a library of saved styles
 
-**Status: ⬜ planned.**
+**Status: ✅ done (2026-06-11).** All three scope items shipped: the
+preset model in the persistence layer (name + text targets + cursor +
+Color FX; sampled targets excluded — session-only per ADR-0011) with
+a versioned JSON export/import; the crate browser in the centre
+column with per-deck save rows under the style pads (loading replaces
+the pad wholesale and re-embeds exactly like typing); and the FLX4
+browse rotary (relative encoder, decoded before the 14-bit CC
+pipeline) + LOAD 1/2 from the Mixxx chart, all mapping rows
+unit-tested. Exit criteria verified on the device against
+[`m16-hardware-checklist.md`](m16-hardware-checklist.md) — every box
+ticked: the rotary/LOAD bytes match the chart with the highlight
+moving the right way, presets save and survive a reload, loads land
+mid-set on either deck without interrupting the playing stream, and
+the export file round-trips.
 
 **Goal:** a set shouldn't be retyped. Save a deck's pad arrangement as a
 named preset, organise presets into crates, and load them mid-set — from
