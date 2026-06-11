@@ -1,15 +1,20 @@
 # magenta-dj
 
-A DJ interface over [Magenta RealTime 2](https://github.com/magenta/magenta-realtime):
-two locally-running model decks steered by text prompts, blended with a
-crossfader. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for where this is going
-and [`docs/adr/`](docs/adr/) for the architecture decisions.
+A DJ rig over [Magenta RealTime 2](https://github.com/magenta/magenta-realtime):
+two locally-running model decks steered by text prompts, mixed with
+three-band EQ, one-knob Color FX, and a crossfader, pre-listened in
+headphones, and playable from a Pioneer DDJ-FLX4. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for how it got here and
+[`docs/adr/`](docs/adr/) for the architecture decisions.
 
 ## Requirements
 
 - Apple Silicon Mac (MLX backend)
 - [uv](https://docs.astral.sh/uv/)
 - ~2 GB disk for model weights (downloaded on first setup)
+- A Chromium-based browser (the app leans on Web Audio worklets and Web MIDI;
+  it is developed and verified against Chrome)
+- Optional: a Pioneer DDJ-FLX4 for hardware control and its headphone jack
 
 All common tasks live in the [`justfile`](justfile) — run `just` to list them.
 
@@ -32,9 +37,18 @@ just run
 
 Then open <http://127.0.0.1:8000> — add style targets to a deck's pad, hit
 play, blend targets by dragging the cursor (or the dots themselves, to
-cluster them), and ride the crossfader between decks. **Record** in the
-mixer captures the master bus to a downloadable WAV. The health row shows
-the stream buffer, underrun count, and generation speed.
+cluster them), and ride the crossfader between decks.
+
+- **Mixer** — per-deck volume and Hi/Mid/Low EQ, crossfader, and **Record**,
+  which captures the master bus to a downloadable WAV. The health row shows
+  the stream buffer, underrun count, and generation speed.
+- **Color FX** — one knob per deck over a chosen effect: Filter (bipolar
+  LPF/HPF), Dub Echo, Space, Crush, Noise, Sweep. The knob's centre/zero is a
+  bit-exact bypass ([ADR-0008](docs/adr/0008-color-fx-as-one-knob-curves-at-a-pre-fader-insert.md)).
+- **Headphone cue** — hit a channel's **Cue**, ride the **Cue mix** knob
+  between cue and master, and pick a **Phones out**: any output device the
+  browser can reach, or the FLX4's own headphone jack, which is fed by the
+  backend over USB ([ADR-0007](docs/adr/0007-flx4-phones-jack-via-a-backend-cue-sink.md)).
 
 Settings (pad arrangements, volumes, crossfade) persist across reloads.
 Shortcuts: `A`/`B` focus a deck's style-target input, `X` focuses the
@@ -42,6 +56,24 @@ crossfader.
 
 For frontend development: `just dev-backend` in one terminal, `just
 dev-frontend` in another (the Vite dev server proxies `/ws` to the backend).
+
+## Hardware control (Pioneer DDJ-FLX4)
+
+Plug in the FLX4 and click **Connect MIDI** (Chrome asks for MIDI with SysEx;
+plain MIDI works too, minus position sync). Mapped controls:
+
+- Play/pause, channel faders, three-band EQ, crossfader
+- Channel **CUE** buttons (headphone cue) and the transport **CUE** button
+  (deck prep: prime a stopped deck off-air, stop a playing one)
+- **SMART CFX** knob — Color FX amount; hold **SHIFT** to sweep the style pad
+  instead
+- **PAD FX** pad bank — select the deck's effect (re-press toggles it off);
+  **HOT CUE** pads pick style targets
+- **HEADPHONES MIX** knob — cue mix
+
+Knob and fader positions sync from the hardware on connect, and the LEDs
+mirror app state. The measured byte map lives in
+[`docs/midi-ddj-flx4.md`](docs/midi-ddj-flx4.md).
 
 ## Verify
 
@@ -51,3 +83,5 @@ dev-frontend` in another (the Vite dev server proxies `/ws` to the backend).
 - `just verify-stream` / `just verify-ui` — e2e against a running server
   (UI e2e needs Playwright Chromium once: `npx playwright install chromium`
   in `frontend/`)
+- Hardware behaviour is verified by a human against the checklists in
+  `docs/` (`m7-`, `m9-m10-`, `m12-hardware-checklist.md`)
