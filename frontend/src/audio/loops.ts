@@ -29,7 +29,7 @@ export const MIN_LOOP_SECONDS = 0.5
 export function buildLoopChannel(
   samples: Float32Array,
   crossfadeFrames: number,
-): Float32Array {
+): Float32Array<ArrayBuffer> {
   const fade = Math.max(
     0,
     Math.min(crossfadeFrames, Math.floor(samples.length / 2)),
