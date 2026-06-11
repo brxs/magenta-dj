@@ -54,6 +54,10 @@ cluster them), and ride the crossfader between decks.
   tempo the Dub Echo syncs to the beat and freeze captures quantise to
   whole beats
   ([ADR-0010](docs/adr/0010-beat-detection-on-the-output-behind-an-honesty-gate.md)).
+- **Deck-to-deck style sampling** — one press puts "the sound of the
+  other deck, right now" on a deck's style pad as a blendable target;
+  sampled targets are session-only by design
+  ([ADR-0011](docs/adr/0011-deck-to-deck-style-sampling-via-audio-embeddings.md)).
 - **Headphone cue** — hit a channel's **Cue**, ride the **Cue mix** knob
   between cue and master, and pick a **Phones out**: any output device the
   browser can reach, or the FLX4's own headphone jack, which is fed by the
