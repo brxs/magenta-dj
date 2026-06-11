@@ -220,6 +220,8 @@ export type BeatGate = {
   /** Feed the latest estimate; returns what may be displayed now. */
   push: (estimate: BeatEstimate | null) => number | null
   current: () => number | null
+  /** Back to blank instantly (stream reset). */
+  reset: () => void
 }
 
 /** A confident estimate at a near-exact half or double of the anchor
@@ -269,5 +271,11 @@ export function createBeatGate(): BeatGate {
       return displayed
     },
     current: () => displayed,
+    reset() {
+      recent.length = 0
+      displayed = null
+      misses = 0
+      unstable = 0
+    },
   }
 }

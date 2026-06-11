@@ -100,7 +100,8 @@ export type AudioEngine = {
   stopRecording: () => Promise<Blob>
 }
 
-const SAMPLE_RATE = 48_000
+/** The wire and graph rate end to end (backend workers generate 48 k). */
+export const SAMPLE_RATE = 48_000
 const PARAM_RAMP_SECONDS = 0.02
 const FLUSH_TIMEOUT_MS = 2_000
 

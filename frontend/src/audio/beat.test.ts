@@ -6,39 +6,13 @@ import {
   GATE_MIN_CONFIDENCE,
   type BeatEstimate,
 } from './beat'
+import { clickTrack as sharedClickTrack, noiseSource } from '../test/clickTrack'
 
 const SAMPLE_RATE = 48_000
 const CHUNK_FRAMES = 1920 // the deck wire chunk: 40 ms
 
-/** Deterministic noise (mulberry32) — tests must not use a real RNG. */
-function noiseSource(seed: number) {
-  let state = seed
-  return () => {
-    state = (state + 0x6d2b79f5) | 0
-    let t = Math.imul(state ^ (state >>> 15), 1 | state)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return (((t ^ (t >>> 14)) >>> 0) / 4294967296) * 2 - 1
-  }
-}
-
-/** Interleaved stereo: decaying noise bursts on every beat over a
- * quiet noise floor — a drum hit caricature. */
 function clickTrack(bpm: number, seconds: number, seed = 1): Float32Array {
-  const noise = noiseSource(seed)
-  const frames = Math.round(seconds * SAMPLE_RATE)
-  const beatPeriod = (60 / bpm) * SAMPLE_RATE
-  const burstFrames = Math.round(0.02 * SAMPLE_RATE)
-  const out = new Float32Array(frames * 2)
-  for (let i = 0; i < frames; i++) {
-    const sinceBeat = i % Math.round(beatPeriod)
-    let sample = noise() * 0.01
-    if (sinceBeat < burstFrames) {
-      sample += noise() * 0.8 * (1 - sinceBeat / burstFrames)
-    }
-    out[2 * i] = sample
-    out[2 * i + 1] = sample
-  }
-  return out
+  return sharedClickTrack(bpm, seconds, SAMPLE_RATE, seed)
 }
 
 function feed(tracker: ReturnType<typeof createBeatTracker>, samples: Float32Array) {
