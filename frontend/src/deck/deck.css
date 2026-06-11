@@ -137,7 +137,8 @@
   cursor: pointer;
 }
 
-.deck__target-action:disabled {
+.deck__target-action:disabled,
+.deck__target-action[aria-disabled='true'] {
   opacity: 0.4;
   cursor: default;
 }

@@ -310,14 +310,14 @@ export function DeckColumn({
     }
   }
 
-  // Commit an in-place prompt edit: the target keeps its position and
-  // weight, only the prompt changes — re-embedded like typing it. A
-  // rename that collides with another chip (or empties) cancels, the
-  // same quiet rule the Add button applies to duplicates.
-  /** Commit an open edit. `restoreFocus` is set for keyboard outcomes
-   * (Enter/Escape) so focus returns to the row's ✎ instead of falling
-   * to <body>; a blur-commit means the user already clicked elsewhere,
-   * and yanking focus back would fight them. */
+  /** Commit an in-place prompt edit: the target keeps its position
+   * and weight, only the prompt changes — re-embedded like typing it.
+   * A rename that collides with another chip (or empties) cancels,
+   * the same quiet rule the Add button applies to duplicates.
+   * `restoreFocus` is set for keyboard outcomes (Enter/Escape) so
+   * focus returns to the row's ✎ instead of falling to <body>; a
+   * blur-commit means the user already clicked elsewhere, and yanking
+   * focus back would fight them. */
   function commitEdit(restoreFocus = false) {
     if (!editing) return
     const text = editing.draft.trim()
