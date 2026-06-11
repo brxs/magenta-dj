@@ -145,6 +145,215 @@ describe('DeckColumn', () => {
     })
   })
 
+  function editTarget(prompt: string, replacement: string) {
+    fireEvent.click(screen.getByRole('button', { name: `Edit ${prompt}` }))
+    const field = screen.getByRole('textbox', { name: `Edit ${prompt}` })
+    fireEvent.change(field, { target: { value: replacement } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+  }
+
+  it('edits a prompt in place, keeping its spot and resending the style', () => {
+    const onSetStyle = vi.fn()
+    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+    addTarget('fnuk')
+    addTarget('techno')
+    onSetStyle.mockClear()
+
+    editTarget('fnuk', '  funk  ')
+    expect(
+      screen.getByRole('button', { name: 'Remove funk' }),
+    ).toBeInTheDocument()
+    // The renamed target keeps its slot (and therefore its weight).
+    const style = onSetStyle.mock.calls.at(-1)![0]
+    expect(style.prompts.map((p: { text: string }) => p.text)).toEqual([
+      'funk',
+      'techno',
+    ])
+    expect(style.prompts[0].weight).toBeCloseTo(0.5)
+  })
+
+  it('escape cancels an edit without touching the style', () => {
+    const onSetStyle = vi.fn()
+    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+    addTarget('funk')
+    onSetStyle.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit funk' }))
+    const field = screen.getByRole('textbox', { name: 'Edit funk' })
+    fireEvent.change(field, { target: { value: 'techno' } })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Remove funk' })).toBeInTheDocument()
+    expect(onSetStyle).not.toHaveBeenCalled()
+  })
+
+  it('a rename that collides with another chip cancels quietly', () => {
+    const onSetStyle = vi.fn()
+    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+    addTarget('funk')
+    addTarget('techno')
+    onSetStyle.mockClear()
+
+    editTarget('funk', 'techno')
+    expect(screen.getByRole('button', { name: 'Remove funk' })).toBeInTheDocument()
+    expect(onSetStyle).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['an emptied draft', '   '],
+    ['an unchanged draft', 'funk'],
+  ])('%s cancels quietly without a send', (_label, replacement) => {
+    const onSetStyle = vi.fn()
+    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+    addTarget('funk')
+    onSetStyle.mockClear()
+
+    editTarget('funk', replacement)
+    expect(screen.getByRole('button', { name: 'Remove funk' })).toBeInTheDocument()
+    expect(onSetStyle).not.toHaveBeenCalled()
+  })
+
+  it('returns focus to the row after a keyboard commit or cancel', () => {
+    renderPanel({ connection: 'open' })
+    addTarget('fnuk')
+
+    editTarget('fnuk', 'funk') // Enter
+    expect(screen.getByRole('button', { name: 'Edit funk' })).toHaveFocus()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit funk' }))
+    const field = screen.getByRole('textbox', { name: 'Edit funk' })
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(screen.getByRole('button', { name: 'Edit funk' })).toHaveFocus()
+  })
+
+  it('an edit open when the deck becomes inoperable cancels instead of committing', () => {
+    const onSetStyle = vi.fn()
+    const bus = createControlBus()
+    const view = renderPanel(
+      { connection: 'open' },
+      { onSetStyle: onSetStyle as () => void },
+      bus,
+    )
+    addTarget('funk')
+    onSetStyle.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit funk' }))
+    const field = screen.getByRole('textbox', { name: 'Edit funk' })
+    fireEvent.change(field, { target: { value: 'techno' } })
+    // The model switch starts while the edit is open.
+    view.rerender(
+      <ControlBusProvider bus={bus}>
+        <DeckColumn
+          deckId="a"
+          state={{ ...initialDeckState, connection: 'open', switchingModel: true }}
+          getWaveformRange={() => [0, 0]}
+          onPlay={noop}
+          onStop={noop}
+          onSetStyle={onSetStyle as (s: object) => void}
+          onSetModel={noop as (m: string) => void}
+          onRestart={noop}
+          fx={{ kind: null, amount: 0 }}
+          onSetFx={noop as (k: unknown) => void}
+          onSetFxAmount={noop as (v: number) => void}
+          loop={{ filled: [false, false, false, false], active: null, seconds: 4 }}
+          onLoopPad={noop as (slot: number) => void}
+          onClearLoopPad={noop as (slot: number) => void}
+          onSetLoopSeconds={noop as (seconds: number) => void}
+          bpm={null}
+          onSampleOtherDeck={async () => null}
+          canSample
+          onSavePreset={noop as (preset: object) => void}
+        />
+      </ControlBusProvider>,
+    )
+    fireEvent.keyDown(
+      screen.getByRole('textbox', { name: 'Edit funk' }),
+      { key: 'Enter' },
+    )
+    expect(
+      screen.getByRole('button', { name: 'Remove funk' }),
+    ).toBeInTheDocument()
+    expect(onSetStyle).not.toHaveBeenCalled()
+    expect(
+      (loadDeckSettings('a').targets ?? []).map((target) => target.text),
+    ).toEqual(['funk'])
+  })
+
+  it('a preset load closes an open edit instead of leaving a stale draft', () => {
+    const bus = createControlBus()
+    renderPanel({ connection: 'open' }, {}, bus)
+    addTarget('funk')
+    fireEvent.click(screen.getByRole('button', { name: 'Edit funk' }))
+    expect(screen.getByRole('textbox', { name: 'Edit funk' })).toBeInTheDocument()
+
+    act(() =>
+      bus.publish({
+        kind: 'preset_load',
+        deck: 'a',
+        preset: {
+          name: 'Other',
+          targets: [{ text: 'dub', x: 0.5, y: 0.5 }],
+          cursor: { x: 0.5, y: 0.5 },
+          fx: { kind: null, amount: 0 },
+        },
+      }),
+    )
+    expect(
+      screen.queryByRole('textbox', { name: 'Edit funk' }),
+    ).not.toBeInTheDocument()
+    // Re-adding the same text must render a plain row, not a
+    // pre-opened editor with the stale draft.
+    addTarget('funk')
+    expect(
+      screen.queryByRole('textbox', { name: 'Edit funk' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('blurring the edit field commits like Enter', () => {
+    const onSetStyle = vi.fn()
+    renderPanel({ connection: 'open' }, { onSetStyle: onSetStyle as () => void })
+    addTarget('funk')
+    onSetStyle.mockClear()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit funk' }))
+    const field = screen.getByRole('textbox', { name: 'Edit funk' })
+    fireEvent.change(field, { target: { value: 'dub' } })
+    fireEvent.blur(field)
+    expect(screen.getByRole('button', { name: 'Remove dub' })).toBeInTheDocument()
+    expect(onSetStyle).toHaveBeenCalledWith({
+      prompts: [{ text: 'dub', weight: 1 }],
+    })
+  })
+
+  it('a rename persists like any other pad change', () => {
+    renderPanel({ connection: 'open' })
+    addTarget('fnuk')
+    editTarget('fnuk', 'funk')
+    expect(
+      (loadDeckSettings('a').targets ?? []).map((target) => target.text),
+    ).toEqual(['funk'])
+  })
+
+  it('sampled chips are not editable — their label names a moment', async () => {
+    const onSampleOtherDeck = vi.fn(async () => ({
+      label: '⏺ B·1',
+      sample: 'sample:b:1',
+    }))
+    renderPanel(
+      { connection: 'open' },
+      { onSampleOtherDeck: onSampleOtherDeck as unknown as () => void },
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
+    await screen.findByRole('button', { name: 'Remove ⏺ B·1' })
+    // aria-disabled, not disabled: the button stays focusable so a
+    // screen reader hears WHY instead of skipping the control.
+    const edit = screen.getByRole('button', { name: 'Edit ⏺ B·1' })
+    expect(edit).toHaveAttribute('aria-disabled', 'true')
+    fireEvent.click(edit)
+    expect(
+      screen.queryByRole('textbox', { name: 'Edit ⏺ B·1' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('keeps the pad locked until there are two targets to blend', () => {
     renderPanel({ connection: 'open' })
     expect(screen.getByLabelText('Style pad')).toHaveAttribute(
@@ -225,11 +434,12 @@ describe('DeckColumn', () => {
 
       // Grab the funk dot (12 o'clock) and drop it just beside the centred
       // cursor — a cluster move.
-      fireEvent.pointerDown(screen.getByText('funk'), {
-        clientX: 50,
-        clientY: 12,
-        pointerId: 1,
-      })
+      // The chip's text button also says 'funk' now — address the
+      // pad dot's label specifically.
+      fireEvent.pointerDown(
+        screen.getByText('funk', { selector: '.ui-xypad__target-label' }),
+        { clientX: 50, clientY: 12, pointerId: 1 },
+      )
       fireEvent.pointerMove(surface, { clientX: 51, clientY: 50, pointerId: 1 })
       fireEvent.pointerUp(surface, { pointerId: 1 })
       vi.advanceTimersByTime(300) // flush the throttle's trailing send
@@ -468,7 +678,9 @@ describe('DeckColumn', () => {
       },
     )
     fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
-    expect(await screen.findByText('⏺ B·1 ✕')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('button', { name: 'Remove ⏺ B·1' }),
+    ).toBeInTheDocument()
     expect(onSetStyle).toHaveBeenCalledWith({
       prompts: [{ text: '⏺ B·1', weight: 1, sample: 'sample:b:1' }],
     })
@@ -516,7 +728,7 @@ describe('DeckColumn', () => {
       </StrictMode>,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
-    await screen.findByText('⏺ B·1 ✕')
+    await screen.findByRole('button', { name: 'Remove ⏺ B·1' })
     expect(onSetStyle).toHaveBeenCalledTimes(1)
   })
 
@@ -572,7 +784,7 @@ describe('DeckColumn', () => {
     )
     addTarget('funk')
     fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
-    await screen.findByText('⏺ B·1 ✕')
+    await screen.findByRole('button', { name: 'Remove ⏺ B·1' })
     const persisted = loadDeckSettings('a').targets ?? []
     expect(persisted.map((target) => target.text)).toEqual(['funk'])
   })
@@ -587,7 +799,7 @@ describe('DeckColumn', () => {
       { onSampleOtherDeck: onSampleOtherDeck as unknown as () => void },
     )
     fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
-    await screen.findByText('⏺ B·1 ✕')
+    await screen.findByRole('button', { name: 'Remove ⏺ B·1' })
 
     rerender(
       <ControlBusProvider bus={createControlBus()}>
@@ -614,7 +826,9 @@ describe('DeckColumn', () => {
         />
       </ControlBusProvider>,
     )
-    expect(screen.queryByText('⏺ B·1 ✕')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Remove ⏺ B·1' }),
+    ).not.toBeInTheDocument()
   })
 
   it('saves the pad and FX as a named preset, excluding sampled chips', async () => {
@@ -634,7 +848,7 @@ describe('DeckColumn', () => {
     )
     addTarget('funk')
     fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
-    await screen.findByText('⏺ B·1 ✕')
+    await screen.findByRole('button', { name: 'Remove ⏺ B·1' })
 
     fireEvent.change(screen.getByLabelText('Preset name'), {
       target: { value: '  Warm funk  ' },
@@ -660,7 +874,7 @@ describe('DeckColumn', () => {
       { onSampleOtherDeck: onSampleOtherDeck as unknown as () => void },
     )
     fireEvent.click(screen.getByRole('button', { name: 'Sample deck B' }))
-    await screen.findByText('⏺ B·1 ✕')
+    await screen.findByRole('button', { name: 'Remove ⏺ B·1' })
     fireEvent.change(screen.getByLabelText('Preset name'), {
       target: { value: 'Only samples' },
     })
@@ -689,8 +903,12 @@ describe('DeckColumn', () => {
         },
       }),
     )
-    expect(screen.getByText('warm disco funk ✕')).toBeInTheDocument()
-    expect(screen.queryByText('old target ✕')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Remove warm disco funk' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Remove old target' }),
+    ).not.toBeInTheDocument()
     const style = onSetStyle.mock.calls.at(-1)![0]
     expect(style.prompts[0]).toMatchObject({ text: 'warm disco funk' })
     // Cursor sits on the first target: full weight there.
@@ -715,7 +933,9 @@ describe('DeckColumn', () => {
         },
       }),
     )
-    expect(screen.queryByText('theirs ✕')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Remove theirs' }),
+    ).not.toBeInTheDocument()
     expect(onSetStyle).not.toHaveBeenCalled()
   })
 

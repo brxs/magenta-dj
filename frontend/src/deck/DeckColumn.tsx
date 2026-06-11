@@ -139,6 +139,21 @@ export function DeckColumn({
     () => loadDeckSettings(deckId).cursor ?? { x: 0.5, y: 0.5 },
   )
   const [targetDraft, setTargetDraft] = useState('')
+  // In-place prompt editing: which row is open and its draft text.
+  const [editing, setEditing] = useState<{ text: string; draft: string } | null>(
+    null,
+  )
+  // After a keyboard-driven commit/cancel, focus returns to this
+  // row's ✎ (the input unmounts, which would otherwise drop focus to
+  // the body). A ref, not state: the commit/cancel itself re-renders
+  // via setEditing, and focusing is imperative — no render to drive.
+  const focusAfterEditRef = useRef<string | null>(null)
+  const editButtons = useRef(new Map<string, HTMLButtonElement>())
+  useEffect(() => {
+    if (focusAfterEditRef.current === null) return
+    editButtons.current.get(focusAfterEditRef.current)?.focus()
+    focusAfterEditRef.current = null
+  })
   const [presetDraft, setPresetDraft] = useState('')
   const [throttle] = useState(() => createSendThrottle(STYLE_SEND_INTERVAL_MS))
 
@@ -206,6 +221,14 @@ export function DeckColumn({
   const workerGone = state.workerDied || state.switchingModel
   if (workerGone && targets.some((target) => target.sample)) {
     setTargets(targets.filter((target) => !target.sample))
+  }
+
+  // An open edit whose target vanished (preset load, removal, the
+  // strip above) must not linger — its input unmounts without a blur,
+  // and a later same-named target would render pre-opened with the
+  // stale draft. Same render-time pattern as the strip above.
+  if (editing && !targets.some((target) => target.text === editing.text)) {
+    setEditing(null)
   }
 
   useEffect(() => {
@@ -285,6 +308,40 @@ export function DeckColumn({
     } finally {
       setSampling(false)
     }
+  }
+
+  /** Commit an in-place prompt edit: the target keeps its position
+   * and weight, only the prompt changes — re-embedded like typing it.
+   * A rename that collides with another chip (or empties) cancels,
+   * the same quiet rule the Add button applies to duplicates.
+   * `restoreFocus` is set for keyboard outcomes (Enter/Escape) so
+   * focus returns to the row's ✎ instead of falling to <body>; a
+   * blur-commit means the user already clicked elsewhere, and yanking
+   * focus back would fight them. */
+  function commitEdit(restoreFocus = false) {
+    if (!editing) return
+    const text = editing.draft.trim()
+    const original = editing.text
+    setEditing(null)
+    // The deck may have become untouchable mid-edit (disconnect, model
+    // switch); every other mutation path is gated by a disabled
+    // control, so the open input cancels rather than committing.
+    if (!operable) return
+    const renamed = text && text !== original && !targets.some((target) => target.text === text)
+    const finalText = renamed ? text : original
+    if (restoreFocus) focusAfterEditRef.current = finalText
+    if (!renamed) return
+    const next = targets.map((target) =>
+      target.text === original ? { ...target, text } : target,
+    )
+    setTargets(next)
+    sendStyle(next, cursor)
+  }
+
+  function cancelEdit() {
+    if (!editing) return
+    focusAfterEditRef.current = editing.text
+    setEditing(null)
   }
 
   function removeTarget(text: string) {
@@ -433,23 +490,6 @@ export function DeckColumn({
           </Button>
         </div>
 
-        {targets.length > 0 && (
-          <ul className="deck__targets">
-            {targets.map((target) => (
-              <li key={target.text}>
-                <button
-                  className="deck__target-chip"
-                  onClick={() => removeTarget(target.text)}
-                  disabled={!operable}
-                  aria-label={t('deck.style.removeTarget', { prompt: target.text })}
-                >
-                  {target.text} ✕
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
         <XYPad
           label={t('deck.style.pad')}
           targets={padTargets}
@@ -458,6 +498,68 @@ export function DeckColumn({
           onChange={handleCursor}
           onTargetMove={handleTargetMove}
         />
+
+        {targets.length > 0 && (
+          <ul className="deck__targets">
+            {targets.map((target) => (
+              <li key={target.text} className="deck__target-row">
+                {editing?.text === target.text ? (
+                  <input
+                    className="deck__target-edit"
+                    value={editing.draft}
+                    autoFocus
+                    aria-label={t('deck.style.editTarget', { prompt: target.text })}
+                    onChange={(event) =>
+                      setEditing({ text: target.text, draft: event.target.value })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitEdit(true)
+                      if (event.key === 'Escape') cancelEdit()
+                    }}
+                    onBlur={() => commitEdit()}
+                  />
+                ) : (
+                  <>
+                    <span className="deck__target-text">{target.text}</span>
+                    <button
+                      ref={(element) => {
+                        if (element) editButtons.current.set(target.text, element)
+                        else editButtons.current.delete(target.text)
+                      }}
+                      className="deck__target-action"
+                      onClick={() => {
+                        // Sampled chips (M15) have no text to edit —
+                        // their label names a captured moment, not a
+                        // prompt. aria-disabled (not disabled) keeps
+                        // the button focusable so that reasoning is
+                        // announced rather than skipped.
+                        if (target.sample) return
+                        setEditing({ text: target.text, draft: target.text })
+                      }}
+                      disabled={!operable}
+                      aria-disabled={!operable || Boolean(target.sample)}
+                      aria-label={t('deck.style.editTarget', {
+                        prompt: target.text,
+                      })}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="deck__target-action"
+                      onClick={() => removeTarget(target.text)}
+                      disabled={!operable}
+                      aria-label={t('deck.style.removeTarget', {
+                        prompt: target.text,
+                      })}
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
         <p className="deck__active-prompt">{activeSummary}</p>
         {sampleError && (
           <p className="deck__error" role="alert">
