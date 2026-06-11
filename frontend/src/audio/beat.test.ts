@@ -127,13 +127,17 @@ describe('createBeatGate', () => {
     expect(gate.current()).toBe(128)
   })
 
-  it('drops the readout the moment confidence goes', () => {
+  it('rides out one unconfident estimate, drops on the second', () => {
+    // Deliberate: generative music breathes, and re-acquisition costs
+    // 3+ s — one second of hold is not a lie, two misses in a row is.
     const gate = createBeatGate()
     gate.push(confident(128))
     gate.push(confident(128))
     gate.push(confident(128))
     expect(gate.current()).toBe(128)
-    expect(gate.push({ bpm: 128, confidence: GATE_MIN_CONFIDENCE - 0.01 })).toBeNull()
+    const weak = { bpm: 128, confidence: GATE_MIN_CONFIDENCE - 0.01 }
+    expect(gate.push(weak)).toBe(128)
+    expect(gate.push(weak)).toBeNull()
     expect(gate.current()).toBeNull()
   })
 
@@ -144,11 +148,47 @@ describe('createBeatGate', () => {
     expect(gate.push(confident(100))).toBeNull()
   })
 
-  it('treats a null estimate as losing the beat', () => {
+  it('holds through a tempo change, then locks onto the new tempo', () => {
     const gate = createBeatGate()
     gate.push(confident(128))
     gate.push(confident(128))
     gate.push(confident(128))
+    // The window straddles old and new estimates: hold the old number.
+    expect(gate.push(confident(150))).toBe(128)
+    expect(gate.push(confident(150))).toBe(128)
+    // Three new-tempo estimates agree: the display follows.
+    expect(gate.push(confident(150))).toBe(150)
+  })
+
+  it('drops a held readout when confident estimates keep quarrelling', () => {
+    const gate = createBeatGate()
+    gate.push(confident(128))
+    gate.push(confident(128))
+    gate.push(confident(128))
+    expect(gate.push(confident(150))).toBe(128)
+    expect(gate.push(confident(100))).toBe(128)
+    expect(gate.push(confident(170))).toBeNull()
+  })
+
+  it('folds octave-flapping estimates onto the held tempo', () => {
+    // Half/double of the same beat structure is the same answer at
+    // another metrical level (the corpus hip hop clip alternates
+    // ~95/~190); flapping must read as agreement, not as a quarrel.
+    const gate = createBeatGate()
+    gate.push(confident(95))
+    gate.push(confident(190))
+    expect(gate.push(confident(95.5))).not.toBeNull()
+    gate.push(confident(190))
+    gate.push(confident(95))
+    expect(gate.current()).not.toBeNull()
+  })
+
+  it('treats null estimates like unconfident ones', () => {
+    const gate = createBeatGate()
+    gate.push(confident(128))
+    gate.push(confident(128))
+    gate.push(confident(128))
+    expect(gate.push(null)).toBe(128)
     expect(gate.push(null)).toBeNull()
     expect(gate.current()).toBeNull()
   })

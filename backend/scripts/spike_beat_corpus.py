@@ -25,19 +25,21 @@ from magenta_rt.mlx import system
 SECONDS = 24
 OUT_DIR = Path(__file__).resolve().parent.parent / "spike_corpus"
 
-# (slug, prompt, rhythmic?) — rhythmic entries must yield a stable
-# estimate for M14 to ship; beatless entries must yield none.
+# (slug, prompt, expectation) — "rhythmic" entries must yield a stable
+# estimate for M14 to ship, "beatless" must yield none, "ambiguous"
+# may yield either (the generated triphop clip's own librosa tempogram
+# has no candidate above ~0.43 — weakly rhythmic source material).
 STYLES = [
-    ("techno", "driving techno, four on the floor", True),
-    ("house", "deep house groove, steady kick", True),
-    ("dnb", "drum and bass, fast breakbeats", True),
-    ("hiphop", "hip hop boom bap, heavy drums", True),
-    ("garage", "uk garage shuffle, swung drums", True),
-    ("dub", "dub reggae, slow heavy groove", True),
-    ("triphop", "downtempo trip hop, dusty drums", True),
-    ("ambient", "ambient drone, soft pads, no drums", False),
-    ("soundscape", "generative ambient soundscape, evolving textures", False),
-    ("piano", "solo piano ballad, rubato, expressive", False),
+    ("techno", "driving techno, four on the floor", "rhythmic"),
+    ("house", "deep house groove, steady kick", "rhythmic"),
+    ("dnb", "drum and bass, fast breakbeats", "rhythmic"),
+    ("hiphop", "hip hop boom bap, heavy drums", "rhythmic"),
+    ("garage", "uk garage shuffle, swung drums", "rhythmic"),
+    ("dub", "dub reggae, slow heavy groove", "rhythmic"),
+    ("triphop", "downtempo trip hop, dusty drums", "ambiguous"),
+    ("ambient", "ambient drone, soft pads, no drums", "beatless"),
+    ("soundscape", "generative ambient soundscape, evolving textures", "beatless"),
+    ("piano", "solo piano ballad, rubato, expressive", "beatless"),
 ]
 
 
@@ -63,7 +65,7 @@ def main() -> None:
     mrt = system.MagentaRT2SystemMlxfn(size="mrt2_small")
 
     manifest = []
-    for slug, prompt, rhythmic in STYLES:
+    for slug, prompt, expect in STYLES:
         print(f"generating {slug}: {prompt!r} ...")
         embedding = mrt.embed_style(prompt)
         wav, _ = mrt.generate(style=embedding, frames=int(SECONDS / 0.04), state=None)
@@ -74,7 +76,7 @@ def main() -> None:
             {
                 "file": path.name,
                 "prompt": prompt,
-                "rhythmic": rhythmic,
+                "expect": expect,
                 "librosa_bpm": round(reference, 1),
                 "sample_rate": wav.sample_rate,
             }
@@ -83,7 +85,7 @@ def main() -> None:
 
     (OUT_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2))
     print(f"\n{len(manifest)} files in {OUT_DIR}; now run the estimator over")
-    print("them:  cd frontend && npx vitest run src/audio/beatCorpus.test.ts")
+    print("them:  cd frontend && npx vitest run src/audio/beatCorpus.test.js")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,13 @@ const WINDOW_SECONDS = 12
 const MIN_SECONDS = 6
 const MIN_BPM = 60
 const MAX_BPM = 200
+/** Band-split flux (one-pole crossovers): drum onsets concentrate in
+ * distinct bands — kick in the lows, hats in the highs — so per-band
+ * log-flux keeps a beat visible against sustained content that masks
+ * it at full bandwidth (measured on the spike corpus: full-band flux
+ * left drum-and-bass at confidence ≤0.22 under its own bassline). */
+const LOW_CROSSOVER_HZ = 200
+const HIGH_CROSSOVER_HZ = 4000
 /** Octave ties break toward this tempo (log-normal prior). */
 const PRIOR_CENTER_BPM = 120
 const PRIOR_OCTAVE_SIGMA = 0.7
@@ -56,14 +63,24 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
   const flux = new Float32Array(capacity)
   let head = 0
   let filled = 0
-  let hopEnergy = 0
+  const lowAlpha = 1 - Math.exp((-2 * Math.PI * LOW_CROSSOVER_HZ) / sampleRate)
+  const highAlpha = 1 - Math.exp((-2 * Math.PI * HIGH_CROSSOVER_HZ) / sampleRate)
+  let lowState = 0
+  let highState = 0
+  const hopEnergy = [0, 0, 0]
   let hopFill = 0
-  let previousLogEnergy: number | null = null
+  let previousLogEnergy: number[] | null = null
 
-  function pushHop(energy: number) {
-    const logEnergy = Math.log(energy + EPS)
+  function pushHop() {
+    const logEnergy = hopEnergy.map((energy) =>
+      Math.log(energy / HOP_FRAMES + EPS),
+    )
     if (previousLogEnergy !== null) {
-      flux[head] = Math.max(0, logEnergy - previousLogEnergy)
+      let rise = 0
+      for (let band = 0; band < logEnergy.length; band++) {
+        rise += Math.max(0, logEnergy[band] - previousLogEnergy[band])
+      }
+      flux[head] = rise
       head = (head + 1) % capacity
       filled = Math.min(filled + 1, capacity)
     }
@@ -74,11 +91,20 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
     push(samples) {
       for (let i = 0; i + 1 < samples.length; i += 2) {
         const mono = (samples[i] + samples[i + 1]) / 2
-        hopEnergy += mono * mono
+        lowState += lowAlpha * (mono - lowState)
+        highState += highAlpha * (mono - highState)
+        const low = lowState
+        const mid = highState - lowState
+        const high = mono - highState
+        hopEnergy[0] += low * low
+        hopEnergy[1] += mid * mid
+        hopEnergy[2] += high * high
         hopFill += 1
         if (hopFill === HOP_FRAMES) {
-          pushHop(hopEnergy / HOP_FRAMES)
-          hopEnergy = 0
+          pushHop()
+          hopEnergy[0] = 0
+          hopEnergy[1] = 0
+          hopEnergy[2] = 0
           hopFill = 0
         }
       }
@@ -169,7 +195,11 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
     reset() {
       head = 0
       filled = 0
-      hopEnergy = 0
+      lowState = 0
+      highState = 0
+      hopEnergy[0] = 0
+      hopEnergy[1] = 0
+      hopEnergy[2] = 0
       hopFill = 0
       previousLogEnergy = null
     },
@@ -178,10 +208,13 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
 
 /** The honesty gate: a BPM is shown only after `GATE_STABLE_COUNT`
  * consecutive confident estimates agreeing within `GATE_TOLERANCE`.
- * One unconfident estimate drops the readout — stale numbers lie. */
+ * Acquisition is strict; once showing, a single unconfident estimate
+ * is ridden out (generative music breathes, and re-acquiring costs
+ * 3+ s) — the second consecutive miss drops the readout. */
 export const GATE_MIN_CONFIDENCE = 0.4
 export const GATE_STABLE_COUNT = 3
 export const GATE_TOLERANCE = 0.04
+export const GATE_GRACE_MISSES = 1
 
 export type BeatGate = {
   /** Feed the latest estimate; returns what may be displayed now. */
@@ -189,26 +222,50 @@ export type BeatGate = {
   current: () => number | null
 }
 
+/** A confident estimate at a near-exact half or double of the anchor
+ * is the same rhythm read at another metrical level — fold it onto
+ * the anchor so octave-flapping (hip hop alternating ~95/~190 on the
+ * corpus) reads as the agreement it is. */
+function foldOctave(bpm: number, anchor: number): number {
+  for (const factor of [0.5, 2]) {
+    if (Math.abs(bpm * factor - anchor) <= anchor * GATE_TOLERANCE) {
+      return bpm * factor
+    }
+  }
+  return bpm
+}
+
 export function createBeatGate(): BeatGate {
   const recent: number[] = []
   let displayed: number | null = null
+  let misses = 0
+  let unstable = 0
   return {
     push(estimate) {
       if (!estimate || estimate.confidence < GATE_MIN_CONFIDENCE) {
         recent.length = 0
-        displayed = null
-        return null
+        misses += 1
+        if (misses > GATE_GRACE_MISSES) displayed = null
+        return displayed
       }
-      recent.push(estimate.bpm)
+      misses = 0
+      const anchor = displayed ?? recent.at(-1) ?? null
+      recent.push(anchor === null ? estimate.bpm : foldOctave(estimate.bpm, anchor))
       if (recent.length > GATE_STABLE_COUNT) recent.shift()
-      if (recent.length < GATE_STABLE_COUNT) {
-        displayed = null
-        return null
-      }
+      if (recent.length < GATE_STABLE_COUNT) return displayed
       const sorted = [...recent].sort((a, b) => a - b)
       const median = sorted[Math.floor(sorted.length / 2)]
       const stable = sorted[sorted.length - 1] - sorted[0] <= median * GATE_TOLERANCE
-      displayed = stable ? median : null
+      if (stable) {
+        displayed = median
+        unstable = 0
+      } else {
+        // Confident but disagreeing: hold briefly (a tempo change is
+        // locking in), but a persistent quarrel means we no longer
+        // know the tempo — showing the old number would be a lie.
+        unstable += 1
+        if (unstable >= GATE_STABLE_COUNT) displayed = null
+      }
       return displayed
     },
     current: () => displayed,
