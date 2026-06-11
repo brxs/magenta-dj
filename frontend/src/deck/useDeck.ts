@@ -342,7 +342,12 @@ export function useDeck(deckId: DeckId): DeckControls {
       // played to loop (ADR-0009).
       void channel.captureLoop(slot, current.seconds).then((captured) => {
         if (!captured || channelRef.current !== channel) return
-        if (loopGestureRef.current !== gesture) return // overtaken
+        if (loopGestureRef.current !== gesture) {
+          // Overtaken by STOP or a newer press: drop the buffer too, so
+          // the engine's slot state matches the UI's "empty".
+          channel.clearLoop(slot)
+          return
+        }
         if (!channel.playLoop(slot)) return
         const latest = loopRef.current
         setLoop({

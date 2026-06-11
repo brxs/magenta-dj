@@ -7,10 +7,11 @@
 import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { chromium } from 'playwright'
 
-const DIST = new URL('../dist', import.meta.url).pathname
+const DIST = fileURLToPath(new URL('../dist', import.meta.url))
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
 
 const server = createServer((request, response) => {
