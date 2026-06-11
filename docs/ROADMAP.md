@@ -552,20 +552,21 @@ recorded fixtures.
 
 ## M15 — Deck-to-deck style transfer: "sound like deck A"
 
-**Status: 🔶 built (2026-06-11), pending by-ear verification.** The
-spike came back ship (judged by ear: a 10 s audio embedding carries
-the source's character and blends with a contrasting text style;
-embed latency under 0.5 s — inline in the worker, ADR-0011). All
-three scope items shipped: capture from the source deck's player ring
-(what was heard, pre-EQ/FX), one-shot upload to the target worker
-with FIFO ordering instead of a readiness handshake, and sampled pad
-targets that blend/re-sample/remove like text targets but are
-deliberately mortal — session-only, stripped when their worker dies,
-"re-sample the deck" as the explicit recovery. The file-drop stretch
-is deliberately not built. Gate green (87 backend + 322 frontend
-tests). Exit criteria await a run of
-[`m15-hardware-checklist.md`](m15-hardware-checklist.md) — the
-integrated one-action flow, audible transfer, and clean streams.
+**Status: ✅ done (2026-06-11).** The spike came back ship (judged by
+ear: a 10 s audio embedding carries the source's character and blends
+with a contrasting text style; embed latency under 0.5 s — inline in
+the worker, ADR-0011). All three scope items shipped: capture from
+the source deck's player ring (what was heard, pre-EQ/FX), one-shot
+upload to the target worker with FIFO ordering instead of a readiness
+handshake, and sampled pad targets that blend/re-sample/remove like
+text targets but are deliberately mortal — session-only, stripped
+when their worker dies, "re-sample the deck" as the explicit
+recovery. The file-drop stretch is deliberately not built. Gate green
+(87 backend + 322 frontend tests). Exit criteria verified by ear
+against [`m15-hardware-checklist.md`](m15-hardware-checklist.md) —
+every box ticked: one action lands the target, deck B audibly takes
+on deck A's character and blends by weight, lifetimes honest, both
+streams clean throughout.
 
 **Goal:** MRT styles can come from reference audio, not just text — and
 the most useful reference in a booth is the *other deck*. One action puts
