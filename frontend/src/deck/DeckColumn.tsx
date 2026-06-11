@@ -139,6 +139,10 @@ export function DeckColumn({
     () => loadDeckSettings(deckId).cursor ?? { x: 0.5, y: 0.5 },
   )
   const [targetDraft, setTargetDraft] = useState('')
+  // In-place prompt editing: which chip is open and its draft text.
+  const [editing, setEditing] = useState<{ text: string; draft: string } | null>(
+    null,
+  )
   const [presetDraft, setPresetDraft] = useState('')
   const [throttle] = useState(() => createSendThrottle(STYLE_SEND_INTERVAL_MS))
 
@@ -285,6 +289,24 @@ export function DeckColumn({
     } finally {
       setSampling(false)
     }
+  }
+
+  // Commit an in-place prompt edit: the target keeps its position and
+  // weight, only the prompt changes — re-embedded like typing it. A
+  // rename that collides with another chip (or empties) cancels, the
+  // same quiet rule the Add button applies to duplicates.
+  function commitEdit() {
+    if (!editing) return
+    const text = editing.draft.trim()
+    const original = editing.text
+    setEditing(null)
+    if (!text || text === original) return
+    if (targets.some((target) => target.text === text)) return
+    const next = targets.map((target) =>
+      target.text === original ? { ...target, text } : target,
+    )
+    setTargets(next)
+    sendStyle(next, cursor)
   }
 
   function removeTarget(text: string) {
@@ -436,15 +458,50 @@ export function DeckColumn({
         {targets.length > 0 && (
           <ul className="deck__targets">
             {targets.map((target) => (
-              <li key={target.text}>
-                <button
-                  className="deck__target-chip"
-                  onClick={() => removeTarget(target.text)}
-                  disabled={!operable}
-                  aria-label={t('deck.style.removeTarget', { prompt: target.text })}
-                >
-                  {target.text} ✕
-                </button>
+              <li key={target.text} className="deck__target-chip">
+                {editing?.text === target.text ? (
+                  <input
+                    className="deck__target-edit"
+                    value={editing.draft}
+                    autoFocus
+                    aria-label={t('deck.style.editTarget', { prompt: target.text })}
+                    onChange={(event) =>
+                      setEditing({ text: target.text, draft: event.target.value })
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') commitEdit()
+                      if (event.key === 'Escape') setEditing(null)
+                    }}
+                    onBlur={commitEdit}
+                  />
+                ) : (
+                  <>
+                    <button
+                      className="deck__target-text"
+                      onClick={() =>
+                        setEditing({ text: target.text, draft: target.text })
+                      }
+                      // Sampled chips (M15) have no text to edit — their
+                      // label names a captured moment, not a prompt.
+                      disabled={!operable || Boolean(target.sample)}
+                      aria-label={t('deck.style.editTarget', {
+                        prompt: target.text,
+                      })}
+                    >
+                      {target.text}
+                    </button>
+                    <button
+                      className="deck__target-remove"
+                      onClick={() => removeTarget(target.text)}
+                      disabled={!operable}
+                      aria-label={t('deck.style.removeTarget', {
+                        prompt: target.text,
+                      })}
+                    >
+                      ✕
+                    </button>
+                  </>
+                )}
               </li>
             ))}
           </ul>
