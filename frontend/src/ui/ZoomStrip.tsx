@@ -70,22 +70,27 @@ export function ZoomStrip({ label, accent, vertical, getSource }: ZoomStripProps
       const source = getSource()
       if (!source) return
       const hops = Math.min(
-        MAX_HOPS,
+        MAX_HOPS - 1,
         Math.ceil(WINDOW_SECONDS / source.realSecondsPerHop),
       )
       const fromHop = source.playheadHop - hops / 2
+      // The band window quantises to whole hops but the playhead and
+      // beat marks do not: draw bands from the floored origin (one
+      // extra hop covers the right edge) so the waveform glides in
+      // step with the marks instead of stepping a fraction ahead.
+      const flooredFrom = Math.floor(fromHop)
       const window = {
-        low: scratch.low.subarray(0, hops),
-        mid: scratch.mid.subarray(0, hops),
-        high: scratch.high.subarray(0, hops),
+        low: scratch.low.subarray(0, hops + 1),
+        mid: scratch.mid.subarray(0, hops + 1),
+        high: scratch.high.subarray(0, hops + 1),
       }
-      source.bands.copyWindow(Math.floor(fromHop), window)
+      source.bands.copyWindow(flooredFrom, window)
       const pxPerHop = WIDTH / hops
       const centre = HEIGHT / 2
       const height = (value: number) =>
         Math.min(1, Math.sqrt(value) * AMPLITUDE_GAIN) * (HEIGHT * 0.94)
-      for (let i = 0; i < hops; i++) {
-        const x = i * pxPerHop
+      for (let i = 0; i <= hops; i++) {
+        const x = (flooredFrom + i - fromHop) * pxPerHop
         const width = Math.max(1, pxPerHop)
         const bands = [
           [window.low[i], low],
@@ -100,7 +105,10 @@ export function ZoomStrip({ label, accent, vertical, getSource }: ZoomStripProps
         }
       }
       // Beat marks where the deck's clock is confident: full-height
-      // lines, downbeats heavier — the lattice the eyes match.
+      // lines, every fourth heavier — the lattice the eyes match.
+      // The heavy marks count bars within a strip only: each deck's
+      // anchor is an arbitrary beat, so two locked decks coincide on
+      // the per-beat lattice, not necessarily on the heavy ones.
       if (source.beat) {
         const { periodHops, anchorHop } = source.beat
         context.fillStyle = marks

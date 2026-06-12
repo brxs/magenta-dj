@@ -24,12 +24,15 @@ try {
   const page = await browser.newPage()
   // The beatgrid pass logs its verdict; the script composes another
   // take when a render honestly refuses a grid (per-render variance
-  // is real — the kill criterion only bites if NO take grids).
+  // is real — the kill criterion only bites if NO take grids). The
+  // verdict line names its deck, so the watcher must too — the BPM
+  // readout alone can't tell a grid from a coarse-only verdict.
+  let watchedDeck = 'b'
   let lastGrid = null
   page.on('console', (msg) => {
     const text = msg.text()
     if (text.includes('[beatgrid] verdict')) {
-      lastGrid = !text.includes('verdict b null')
+      lastGrid = !text.includes(`verdict ${watchedDeck} null`)
     }
   })
   await page.goto(URL)
@@ -72,6 +75,7 @@ try {
   await explorer.getByLabel('Length').selectOption('120')
   let composeCount = 0
   async function composeGriddedTrack(deck, deckName) {
+    watchedDeck = deckName.toLowerCase()
     for (let attempt = 0; attempt < 3; attempt++) {
       composeCount += 1
       await explorer.getByRole('button', { name: 'Compose' }).click()

@@ -32,6 +32,9 @@ import {
 } from './deckState'
 
 const RECONNECT_DELAY_MS = 2_000
+/** Worklet stats older than this are stale: the live clocks and the
+ * zoom view blank together, never a lie (ADR-0014). */
+const STATS_FRESH_MS = 2_500
 
 /** Gain-staging trim (M17): auto follows the source's loudness; a
  * manual knob move takes over until auto is re-engaged. */
@@ -773,7 +776,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     }
     const stats = statsRef.current
     if (!stats?.playing) return null
-    if (performance.now() - stats.receivedAt > 2_500) return null
+    if (performance.now() - stats.receivedAt > STATS_FRESH_MS) return null
     const contextNow = engine.getContextTime()
     if (contextNow === null) return null
     // The played index in the pushed-frame domain — the scroller's
@@ -799,7 +802,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     const stats = statsRef.current
     if (!clock || !stats?.playing) return null
     // Stale stats mean a stale clock: blank, never a lie (ADR-0014).
-    if (performance.now() - stats.receivedAt > 2_500) return null
+    if (performance.now() - stats.receivedAt > STATS_FRESH_MS) return null
     return {
       periodSeconds: 60 / clock.bpm,
       beatAtContext:

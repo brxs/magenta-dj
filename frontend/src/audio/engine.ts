@@ -346,6 +346,9 @@ export function createAudioEngine(): AudioEngine {
         cueOut,
       }
     } catch (error) {
+      // A closed context's clock freezes — don't let getContextTime
+      // keep reporting it.
+      liveContext = null
       void context.close()
       throw error
     }

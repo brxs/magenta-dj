@@ -96,22 +96,24 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
     const logEnergy = hopEnergy.map((energy) =>
       Math.log(energy / HOP_FRAMES + EPS),
     )
+    const lowEnergy = hopEnergy[0] / HOP_FRAMES
     if (previousLogEnergy !== null) {
       let rise = 0
       for (let band = 0; band < logEnergy.length; band++) {
         rise += Math.max(0, logEnergy[band] - previousLogEnergy[band])
       }
       flux[head] = rise
-      const lowEnergy = hopEnergy[0] / HOP_FRAMES
       lowFlux[head] =
         previousLowEnergy === null
           ? 0
           : Math.max(0, lowEnergy - previousLowEnergy)
-      previousLowEnergy = lowEnergy
       head = (head + 1) % capacity
       filled = Math.min(filled + 1, capacity)
       hopsPushed += 1
     }
+    // Tracked outside the guard so both envelopes warm up on the same
+    // hop — the first written lowFlux is a real rise, not a zero.
+    previousLowEnergy = lowEnergy
     previousLogEnergy = logEnergy
   }
 
