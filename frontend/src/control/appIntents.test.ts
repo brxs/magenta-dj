@@ -38,7 +38,7 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     nudgeTrack: vi.fn(),
     setTrackRate: vi.fn(),
     nudgeTrackPhase: vi.fn(),
-    syncTrack: vi.fn(() => true),
+    syncTrack: vi.fn(() => 'synced' as const),
     getTrackBeat: vi.fn(() => null),
     getLiveBeat: vi.fn(() => null),
     getTrackPeaks: vi.fn(() => null),

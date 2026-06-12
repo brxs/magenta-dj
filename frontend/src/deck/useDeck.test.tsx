@@ -1170,11 +1170,11 @@ describe('useDeck beat clocks (M20)', () => {
     })
     const bpm = result.current.track!.bpm!
 
-    let synced = false
+    let synced = ''
     act(() => {
       synced = result.current.syncTrack(bpm * 1.05)
     })
-    expect(synced).toBe(true)
+    expect(synced).toBe('synced')
     expect(channel.setTrackRate).toHaveBeenCalledWith(expect.closeTo(1.05, 5))
     expect(result.current.track!.rate).toBeCloseTo(1.05, 5)
     // The synced echo's clock follows the new effective tempo.
@@ -1185,10 +1185,10 @@ describe('useDeck beat clocks (M20)', () => {
     act(() => {
       synced = result.current.syncTrack(bpm * 1.2)
     })
-    expect(synced).toBe(false)
+    expect(synced).toBe('out_of_range')
     act(() => {
       synced = result.current.syncTrack(null)
     })
-    expect(synced).toBe(false)
+    expect(synced).toBe('no_tempo')
   })
 })

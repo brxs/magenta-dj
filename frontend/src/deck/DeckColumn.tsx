@@ -17,6 +17,7 @@ import { TransportButton } from '../ui/TransportButton'
 import { WaveformStrip } from '../ui/WaveformStrip'
 import { XYPad } from '../ui/XYPad'
 import { isDeckOperable, type ActiveStyle, type DeckState } from './deckState'
+import { TRACK_RATE_RANGE } from '../audio/track'
 import { padWeights, spawnPosition, sweepPosition, type PadPoint } from './padWeights'
 import {
   MAX_PRESET_NAME_LENGTH,
@@ -28,6 +29,7 @@ import {
   type DeckMode,
   type GenerateEngine,
   type LoopState,
+  type SyncResult,
   type TrackState,
 } from './useDeck'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
@@ -123,8 +125,8 @@ type DeckColumnProps = {
   onSeekTrack: (seconds: number) => void
   /** Varispeed (M20): the tempo knob's rate, clamped upstream. */
   onSetTrackRate: (rate: number) => void
-  /** SYNC: match the other deck's tempo; false = honest refusal. */
-  onSyncTrack: () => boolean
+  /** SYNC: match the other deck's tempo; refusals name their reason. */
+  onSyncTrack: () => SyncResult
   getTrackPeaks: (
     buckets: number,
   ) => { min: Float32Array; max: Float32Array } | null
@@ -171,9 +173,12 @@ export function DeckColumn({
   // Generated pads (M18): the prompt, engine, and behaviour for the
   // next generation.
   const [generateDraft, setGenerateDraft] = useState('')
-  // SYNC's honest refusal (M20): out-of-envelope or no tempo on
-  // either side — shown until the next attempt succeeds.
-  const [syncRefused, setSyncRefused] = useState(false)
+  // SYNC's honest refusal (M20), keyed to the load so a stale verdict
+  // never haunts the next track's panel.
+  const [syncRefusal, setSyncRefusal] = useState<{
+    loadId: number
+    reason: Exclude<SyncResult, 'synced'>
+  } | null>(null)
   const [generateEngine, setGenerateEngine] = useState<GenerateEngine>('sfx')
   const [generateOneShot, setGenerateOneShot] = useState(true)
   // Mirrors the latest committed targets for reads after an await —
@@ -555,22 +560,33 @@ export function DeckColumn({
               label={t('deck.track.tempo')}
               accent={deckId}
               value={track.rate}
-              min={0.92}
-              max={1.08}
+              min={1 - TRACK_RATE_RANGE}
+              max={1 + TRACK_RATE_RANGE}
               step={0.001}
               resetValue={1}
               onChange={onSetTrackRate}
             />
             <Button
               disabled={track.bpm === null}
-              onClick={() => setSyncRefused(!onSyncTrack())}
+              onClick={() => {
+                const result = onSyncTrack()
+                setSyncRefusal(
+                  result === 'synced'
+                    ? null
+                    : { loadId: track.loadId, reason: result },
+                )
+              }}
             >
               {t('deck.track.sync')}
             </Button>
           </div>
-          {syncRefused && (
+          {syncRefusal && syncRefusal.loadId === track.loadId && (
             <p className="deck__error" role="alert">
-              {t('deck.track.syncRefused')}
+              {t(
+                syncRefusal.reason === 'no_tempo'
+                  ? 'deck.track.syncNoTempo'
+                  : 'deck.track.syncOutOfRange',
+              )}
             </p>
           )}
         </Panel>

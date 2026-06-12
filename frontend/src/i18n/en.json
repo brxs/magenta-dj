@@ -179,7 +179,8 @@
       "backToLive": "Back to live",
       "tempo": "Tempo",
       "sync": "Sync",
-      "syncRefused": "Sync refused — tempo out of range"
+      "syncOutOfRange": "Sync refused — tempo out of range",
+      "syncNoTempo": "Sync refused — no tempo to sync to"
     },
     "health": {
       "buffer": "Buffer",

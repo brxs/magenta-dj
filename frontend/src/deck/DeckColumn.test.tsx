@@ -76,7 +76,9 @@ function renderPanel(
         onLeavePlayback={handlers.onLeavePlayback ?? noop}
         onSeekTrack={(handlers.onSeekTrack as (s: number) => void) ?? noop}
         onSetTrackRate={(handlers.onSetTrackRate as (r: number) => void) ?? noop}
-        onSyncTrack={(handlers.onSyncTrack as () => boolean) ?? (() => true)}
+        onSyncTrack={
+          (handlers.onSyncTrack as () => 'synced') ?? (() => 'synced' as const)
+        }
         getTrackPeaks={() => null}
       />
     </ControlBusProvider>,
@@ -288,7 +290,7 @@ describe('DeckColumn', () => {
           onLeavePlayback={noop}
           onSeekTrack={noop as (s: number) => void}
           onSetTrackRate={noop as (r: number) => void}
-          onSyncTrack={() => true}
+          onSyncTrack={() => 'synced' as const}
           getTrackPeaks={() => null}
         />
       </ControlBusProvider>,
@@ -758,7 +760,7 @@ describe('DeckColumn', () => {
             onLeavePlayback={noop}
             onSeekTrack={noop as (s: number) => void}
             onSetTrackRate={noop as (r: number) => void}
-            onSyncTrack={() => true}
+            onSyncTrack={() => 'synced' as const}
             getTrackPeaks={() => null}
           />
         </ControlBusProvider>
@@ -867,7 +869,7 @@ describe('DeckColumn', () => {
           onLeavePlayback={noop}
           onSeekTrack={noop as (s: number) => void}
           onSetTrackRate={noop as (r: number) => void}
-          onSyncTrack={() => true}
+          onSyncTrack={() => 'synced' as const}
           getTrackPeaks={() => null}
         />
       </ControlBusProvider>,
@@ -1283,8 +1285,8 @@ describe('DeckColumn playback mode (M19)', () => {
     expect(onSetTrackRate).toHaveBeenCalledWith(1.02)
   })
 
-  it('SYNC reports an honest refusal', () => {
-    const onSyncTrack = vi.fn(() => false)
+  it('SYNC names its refusal reason', () => {
+    const onSyncTrack = vi.fn(() => 'out_of_range' as const)
     renderPlayback(aTrack(), {
       onSyncTrack: onSyncTrack as unknown as () => void,
     })
@@ -1292,6 +1294,13 @@ describe('DeckColumn playback mode (M19)', () => {
     expect(onSyncTrack).toHaveBeenCalled()
     expect(
       screen.getByText('Sync refused — tempo out of range'),
+    ).toBeInTheDocument()
+
+    // A missing target is its own message — never the wrong blame.
+    onSyncTrack.mockReturnValue('no_tempo' as never)
+    fireEvent.click(screen.getByRole('button', { name: 'Sync' }))
+    expect(
+      screen.getByText('Sync refused — no tempo to sync to'),
     ).toBeInTheDocument()
   })
 

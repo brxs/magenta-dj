@@ -78,7 +78,7 @@ function renderMixer(engine: AudioEngine, overrides: MixerOverrides = {}) {
           cueMix={0.5}
           onCueMixChange={overrides.onCueMixChange ?? (() => {})}
           cueDevice={overrides.cueDevice ?? null}
-          getPhaseOffset={() => null}
+        getPhaseOffset={() => null}
         onCueDeviceChange={overrides.onCueDeviceChange ?? (async () => {})}
         />
       </ControlBusProvider>

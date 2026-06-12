@@ -42,6 +42,7 @@ import {
   bendConsumed,
   bendPlan,
   clampOffset,
+  clampRate,
   positionAt,
   trackPeaks,
   type TrackTransport,
@@ -521,6 +522,9 @@ export function createAudioEngine(): AudioEngine {
       // stays exact even mid-bend.
       let trackRate = 1
       let pendingSlip = 0
+      // Below this the slip is done: half a millisecond is under any
+      // audible phase resolution and ends the bend recursion.
+      const SLIP_SETTLED_SECONDS = 5e-4
       let bentRate: number | null = null
       let bendStartedAt = 0
       let bendTimer: ReturnType<typeof setTimeout> | null = null
@@ -556,7 +560,10 @@ export function createAudioEngine(): AudioEngine {
           pendingSlip -= bendConsumed(now - bendStartedAt, trackRate, bentRate)
           bentRate = null
         }
-        if (trackTransport.state !== 'playing' || Math.abs(pendingSlip) < 5e-4) {
+        if (
+          trackTransport.state !== 'playing' ||
+          Math.abs(pendingSlip) < SLIP_SETTLED_SECONDS
+        ) {
           pendingSlip = 0
           setSourceRate(trackRate)
           return
@@ -859,8 +866,10 @@ export function createAudioEngine(): AudioEngine {
         setTrackRate(rate) {
           if (!Number.isFinite(rate) || rate <= 0) return
           clearBendState()
-          trackRate = rate
-          setSourceRate(rate)
+          // Callers clamp upstream; the engine boundary holds the
+          // envelope anyway rather than trusting them.
+          trackRate = clampRate(rate)
+          setSourceRate(trackRate)
         },
         nudgeTrackPhase(seconds) {
           if (trackTransport.state !== 'playing') return

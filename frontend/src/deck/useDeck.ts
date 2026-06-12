@@ -85,6 +85,10 @@ export type TrackState = {
  * either side needing "now". */
 export type BeatClock = { periodSeconds: number; beatAtContext: number }
 
+/** SYNC's verdict (M20): refusals name their reason so the UI never
+ * blames the wrong thing. */
+export type SyncResult = 'synced' | 'no_tempo' | 'out_of_range'
+
 const EMPTY_SLOT: LoopSlot = { state: 'empty' }
 
 function withSlot(current: LoopState, slot: number, value: LoopSlot): LoopSlot[] {
@@ -152,10 +156,10 @@ export type DeckControls = {
   /** Phase nudge (jog while playing): slip the playhead via a stepped
    * rate bend — the platter drag, never a click. */
   nudgeTrackPhase: (seconds: number) => void
-  /** SYNC: match the track's tempo to `targetBpm`. Refuses honestly —
-   * false when the track has no gated BPM or the required rate falls
+  /** SYNC: match the track's tempo to `targetBpm`. Refuses honestly,
+   * and says why: no tempo on either side, or the required rate falls
    * outside the varispeed envelope. Needs no grid (ADR-0014). */
-  syncTrack: (targetBpm: number | null) => boolean
+  syncTrack: (targetBpm: number | null) => SyncResult
   /** The track's beat clock (playing + grid required), for the meter. */
   getTrackBeat: () => BeatClock | null
   /** The live stream's beat clock at the speakers (gated BPM, a
@@ -667,15 +671,15 @@ export function useDeck(deckId: DeckId): DeckControls {
   }, [])
 
   const syncTrack = useCallback(
-    (targetBpm: number | null) => {
+    (targetBpm: number | null): SyncResult => {
       const bpm = trackMetaRef.current?.bpm ?? null
-      if (bpm === null || targetBpm === null) return false
+      if (bpm === null || targetBpm === null) return 'no_tempo'
       const required = targetBpm / bpm
       // Out of the varispeed envelope: refuse rather than land close
       // and pretend (ADR-0014).
-      if (clampRate(required) !== required) return false
+      if (clampRate(required) !== required) return 'out_of_range'
       setTrackRate(required)
-      return true
+      return 'synced'
     },
     [setTrackRate],
   )
