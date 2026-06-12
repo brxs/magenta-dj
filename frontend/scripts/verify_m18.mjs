@@ -20,9 +20,15 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage()
   const generateRequests = []
+  const renderRequests = []
   page.on('request', (request) => {
     if (request.url().endsWith('/api/generate')) {
       generateRequests.push(JSON.parse(request.postData()))
+    } else if (request.url().includes('/render')) {
+      renderRequests.push({
+        url: request.url(),
+        body: JSON.parse(request.postData()),
+      })
     }
   })
   await page.goto(URL)
@@ -43,9 +49,10 @@ try {
   const underruns = (deck) =>
     deck.locator('.ui-stat', { hasText: 'Underruns' }).locator('.ui-stat__value')
 
-  async function generate(deck, prompt, kind, padName) {
+  async function generate(deck, prompt, engine, behaviour, padName) {
     await deck.getByLabel('Generate prompt').fill(prompt)
-    await deck.getByLabel('Type').selectOption(kind)
+    await deck.getByLabel('Engine').selectOption(engine)
+    await deck.getByLabel('Type').selectOption(behaviour)
     await deck.getByRole('button', { name: 'Generate', exact: true }).click()
     // Honesty first: the slot must announce the flight, then the result.
     await deck
@@ -61,7 +68,7 @@ try {
   await startDeck(deckB, 'warm dub, deep bass')
   await page.waitForTimeout(8_000) // settle past the prebuffer
 
-  await generate(deckA, 'air horn blast', 'sfx', 'Loop slot 1')
+  await generate(deckA, 'air horn blast', 'sfx', 'oneshot', 'Loop slot 1')
   console.log('sfx one-shot: pending → ready, slot 1 lit')
 
   // The loop needs the locked tempo; the techno deck acquires within
@@ -79,7 +86,13 @@ try {
     .locator('.ui-stat__value')
     .textContent()
   const bpm = Number(bpmText)
-  await generate(deckA, 'rolling techno percussion loop', 'loop', 'Loop slot 2')
+  await generate(
+    deckA,
+    'rolling techno percussion loop',
+    'music',
+    'loop',
+    'Loop slot 2',
+  )
   console.log(`musical loop generated against a locked ${bpm} BPM`)
 
   // ── The request was shaped by the tempo ────────────────────────────
@@ -103,12 +116,23 @@ try {
   const underrunsB = (await underruns(deckB).textContent()).trim()
   console.log(`underruns through it all: deck a=${underrunsA} deck b=${underrunsB}`)
 
+  // ── Magenta engine: a stopped deck's own worker fills a pad ────────
+  await deckB.getByRole('button', { name: 'Stop', exact: true }).click()
+  await page.waitForTimeout(1_000)
+  await generate(deckB, 'deep dub chords', 'magenta', 'oneshot', 'Loop slot 1')
+  console.log('magenta clip rendered on the stopped deck, slot 1 lit')
+
   await page.screenshot({ path: 'm18-verification.png', fullPage: true })
   await deckA.getByRole('button', { name: 'Stop', exact: true }).click()
-  await deckB.getByRole('button', { name: 'Stop', exact: true }).click()
 
   if (generateRequests.length !== 2) {
     throw new Error(`expected 2 generate requests, saw ${generateRequests.length}`)
+  }
+  if (
+    renderRequests.length !== 1 ||
+    !renderRequests[0].url.endsWith('/api/deck/b/render')
+  ) {
+    throw new Error('the magenta clip did not go through the deck render route')
   }
   if (generateRequests[0].kind !== 'sfx') {
     throw new Error('the one-shot request did not use the sfx model')
@@ -119,7 +143,10 @@ try {
   if (!loopRequest.prompt.includes(`${Math.round(bpm)} BPM`)) {
     throw new Error(`the loop prompt lost the tempo: "${loopRequest.prompt}"`)
   }
-  if (Math.abs(bars - Math.round(bars)) > 1e-6) {
+  // The deck quantises with the gate's full-precision tempo; this
+  // recomputation uses the rounded readout, so allow that rounding
+  // (±0.05 bpm over a few bars ≈ a few thousandths of a bar).
+  if (Math.abs(bars - Math.round(bars)) > 0.01) {
     throw new Error(`loop request is ${bars} bars — not on the bar grid`)
   }
   if (!stillFrozen) {

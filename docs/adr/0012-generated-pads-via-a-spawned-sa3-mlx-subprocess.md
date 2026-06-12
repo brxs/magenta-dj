@@ -29,8 +29,14 @@ per run, model load included):
 | sm-music | 30 s | 1.52 s | 1.47 GB |
 
 Quality cleared the go/no-go by ear (both models, all four clips).
-Weights (~2.3 GB for sm-sfx + sm-music + shared codec + T5Gemma)
-auto-download from HF into the cache and symlink into the checkout.
+One length limit surfaced in the integration listen: **sm-music breaks
+up below ~4 s** — a 3.6 s request came back garbled from the CLI and
+the API alike while 7.2 s (and the probe's 7.74 s) were clean — so the
+frontend floors generated-loop requests at 7 s
+(`GENERATED_LOOP_MIN_SECONDS`), in whole bars when the tempo is
+locked; more bars beat broken audio. Weights (~2.3 GB for sm-sfx +
+sm-music + shared codec + T5Gemma) auto-download from HF into the
+cache and symlink into the checkout.
 
 Decisions needed: how the backend runs it, where the checkout lives,
 and what happens when it's missing or fails.
@@ -64,6 +70,18 @@ and what happens when it's missing or fails.
   CLI → 502 with the captured stderr tail; prompt/seconds validation
   (non-blank, bounded length and duration) → 422 at the trust
   boundary.
+- **The deck's own model is the third engine.** A *stopped* deck's
+  Magenta worker — model warm, generating faster than real time —
+  renders standalone clips via a `render_clip` command: fresh
+  generation state and its own style blend, so the stream's
+  continuity is never touched. The worker's own `playing` flag is the
+  authoritative refusal (a playing worker is paced to its stream;
+  rendering would stall it for seconds — surfaced as 409, and the UI
+  gates the option to silent decks rather than hiding the failure).
+  Results travel a dedicated clip queue, matched to requests by id
+  with stale answers discarded, and `/api/deck/{deck}/render` returns
+  the clip as a float32 WAV (IEEE format 3 — no quantisation between
+  the worker and `decodeAudioData`).
 
 ## Consequences
 
@@ -76,6 +94,9 @@ and what happens when it's missing or fails.
 - An un-versioned upstream: the CLI flags are the contract and a
   rebase upstream can break it. Mitigated by the pinned commit, one
   owning module, and errors that name the problem.
+- A Magenta clip render holds its worker for a few seconds and
+  commands queue behind it. Accepted: it is only offered on a silent
+  deck, and the renders are short.
 - First-ever generation on a fresh machine pays the HF weight
   download (~2.3 GB) inside the request timeout; the 503 setup hint
   documents pre-warming via one manual `sa3` run.

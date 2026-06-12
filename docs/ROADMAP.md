@@ -727,21 +727,30 @@ Scope, ordered by risk:
    one-shots fire once and fall silent. Session-only like captures
    (ADR-0009). Generation is async: the slot shows a pending state
    and lights when ready — the M15 sampled-target lifecycle pattern.
-3. **UI.** A generate row per deck: prompt field, SFX/loop toggle,
-   length. For loops, the deck's locked BPM (M14) feeds the prompt
-   text and the length quantises to whole bars through the existing
-   beat math — free-length the moment the gate blanks, honest like
-   every M14 consumer.
-4. **Hardware.** Nothing new to map: the M13 SAMPLER bank already
+3. **UI.** A generate row per deck: prompt field, an engine picker,
+   a one-shot/loop toggle, length. For music-model loops, the deck's
+   locked BPM (M14) feeds the prompt text and the length quantises to
+   whole bars through the existing beat math — free-length the moment
+   the gate blanks, honest like every M14 consumer — plus a measured
+   quality floor (sm-music breaks up under ~4 s).
+4. **Magenta as the third engine.** A *stopped* deck's own worker —
+   model warm, faster than real time — renders clips from a fresh
+   state on a dedicated result queue, so pads can speak the booth's
+   own sound world. The worker's `playing` flag is the authoritative
+   refusal (rendering would stall a live stream's pacing); the UI
+   gates the option to silent decks.
+5. **Hardware.** Nothing new to map: the M13 SAMPLER bank already
    fires the slots. Generation itself needs text — on-screen by
    design.
 
 **Exit criteria:** typing a prompt fills a chosen pad slot while both
 decks keep streaming with zero underruns; an SFX one-shot and a
 BPM-quantised musical loop each play through the existing loop path
-with EQ and Color FX live; pending → ready states are honest
+with EQ and Color FX live; a Magenta-rendered clip from a stopped
+deck fills a pad the same way; pending → ready states are honest
 throughout; measured latency and model-choice findings recorded in
-the ADR; the decode and quantisation seams unit-tested.
+the ADR; the decode, quantisation, render, and endpoint seams
+unit-tested.
 
 ## M19 — Track deck: trade the stream for a composed track
 
