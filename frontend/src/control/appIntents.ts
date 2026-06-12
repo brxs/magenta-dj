@@ -9,6 +9,12 @@ export type AppIntentHandlers = {
   onCueMix: (position: number) => void
 }
 
+/** Seconds per jog tick. Feel-tuned starting point: the FLX4 jog
+ * sends single ticks at human turn speed, so a slow turn rides the
+ * playhead and a spin jumps bars — verified by hand on the device
+ * (the M19 checklist). */
+export const JOG_SEEK_SECONDS = 0.5
+
 /** The App-owned slice of the intent union: transport, deck prep, channel
  * volume/EQ/cue, the crossfader, and the cue mix. Style and record intents
  * are handled where that state lives (DeckColumn, MixerStrip). Pure
@@ -21,6 +27,13 @@ export function applyAppIntent(
   switch (intent.kind) {
     case 'play_toggle': {
       const deck = decks[intent.deck]
+      // A playback deck answers to its track, not the worker — the
+      // worker is parked and state.playing is honestly false (M19).
+      if (deck.mode === 'playback') {
+        if (deck.track?.playing) deck.stop()
+        else void deck.play()
+        return
+      }
       // Same gating as the transport button: hardware must not start a
       // deck the UI would refuse to.
       if (!isDeckOperable(deck.state)) return
@@ -30,6 +43,12 @@ export function applyAppIntent(
     }
     case 'deck_prep': {
       const deck = decks[intent.deck]
+      // CUE on a track returns it to the top, parked (prime carries
+      // the playback-mode semantics, ADR-0013).
+      if (deck.mode === 'playback') {
+        void deck.prime()
+        return
+      }
       if (!isDeckOperable(deck.state)) return
       // CUE on a rolling deck (primed or on air) stops with flush; on a
       // stopped deck it primes — generation audible only over the cue tap.
@@ -69,6 +88,14 @@ export function applyAppIntent(
     case 'loop_clear':
       decks[intent.deck].clearLoopPad(intent.index)
       return
+    case 'track_seek': {
+      const deck = decks[intent.deck]
+      // Jog ticks only mean something on a playback deck; the live
+      // stream keeps its no-scratch stance (ADR-0004).
+      if (deck.mode !== 'playback') return
+      deck.nudgeTrack(intent.steps * JOG_SEEK_SECONDS)
+      return
+    }
     case 'crossfade':
       handlers.onCrossfade(intent.value)
       return

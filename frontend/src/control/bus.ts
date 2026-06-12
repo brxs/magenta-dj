@@ -21,11 +21,18 @@ export type ControlIntent =
   | { kind: 'fx_select'; deck: DeckId; index: number }
   | { kind: 'loop_pad'; deck: DeckId; index: number }
   | { kind: 'loop_clear'; deck: DeckId; index: number }
-  // Crates (M16): browse-rotary highlight moves and LOAD presses are
-  // handled by the crate browser; a chosen preset's pad portion rides
-  // the bus to the owning deck column.
-  | { kind: 'crate_scroll'; steps: number }
-  | { kind: 'crate_load'; deck: DeckId }
+  // Media browsing (M16 crates, widened by M19): the rotary moves the
+  // visible explorer tab's highlight and LOAD loads the highlighted
+  // item — crate or track, the item type decides what loading means
+  // (ADR-0013). A chosen preset's pad portion rides the bus to the
+  // owning deck column.
+  | { kind: 'browse_scroll'; steps: number }
+  | { kind: 'browse_load'; deck: DeckId }
+  // Rotary press (M19): cycle the explorer's visible tab.
+  | { kind: 'browse_tab' }
+  // Jog wheel ticks (M19): relative seek on a playback deck; a
+  // realtime deck ignores them (ADR-0004 — no scratch concept).
+  | { kind: 'track_seek'; deck: DeckId; steps: number }
   | { kind: 'preset_load'; deck: DeckId; preset: StylePreset }
 
 export type ControlBus = {

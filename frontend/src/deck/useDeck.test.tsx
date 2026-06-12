@@ -75,6 +75,18 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     stopOneShot: vi.fn(),
     clearLoop: vi.fn(),
     captureSample: vi.fn(async () => new Float32Array(2)),
+    loadTrack: vi.fn(async () => ({
+      duration: 120,
+      sampleRate: 48_000,
+      left: new Float32Array(0),
+      right: new Float32Array(0),
+    })),
+    playTrack: vi.fn(() => true),
+    pauseTrack: vi.fn(),
+    seekTrack: vi.fn(),
+    getTrackStatus: vi.fn(() => null),
+    getTrackPeaks: vi.fn(() => null),
+    unloadTrack: vi.fn(),
     getLevel: vi.fn(() => 0),
     getWaveformRange: vi.fn(() => [0, 0] as [number, number]),
     dispose: vi.fn(),
@@ -869,5 +881,166 @@ describe('useDeck generated pads', () => {
     expect(engine.createDeckChannel).toHaveBeenCalled()
     expect(channel.loadGeneratedLoop).toHaveBeenCalled()
     expect(result.current.loop.slots[0].state).toBe('filled')
+  })
+})
+
+describe('useDeck playback mode (M19)', () => {
+  async function loadedDeck() {
+    const { engine, channel } = makeFakeEngine()
+    const rendered = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    let loaded = false
+    await act(async () => {
+      loaded = await rendered.result.current.loadTrack(
+        new ArrayBuffer(8),
+        'Test Pressing',
+      )
+    })
+    expect(loaded).toBe(true)
+    return { ...rendered, channel }
+  }
+
+  it('loadTrack parks the stream and enters playback with the offline verdict', async () => {
+    const { result, channel } = await loadedDeck()
+    expect(channel.loadTrack).toHaveBeenCalled()
+    // The worker parks warm: a stop went over the wire (ADR-0013).
+    expect(socket(0).sent).toContain(JSON.stringify({ type: 'stop' }))
+    expect(result.current.mode).toBe('playback')
+    expect(result.current.track).toMatchObject({
+      title: 'Test Pressing',
+      duration: 120,
+      position: 0,
+      playing: false,
+      ended: false,
+      bpm: null, // silence in, honesty out (M14)
+    })
+    expect(channel.setBeatPeriod).toHaveBeenLastCalledWith(null)
+  })
+
+  it('PLAY and STOP drive the track, not the worker', async () => {
+    const { result, channel } = await loadedDeck()
+    const sentBefore = socket(0).sent.length
+    await act(async () => result.current.play())
+    expect(channel.playTrack).toHaveBeenCalled()
+    act(() => result.current.stop())
+    expect(channel.pauseTrack).toHaveBeenCalled()
+    expect(socket(0).sent).toHaveLength(sentBefore)
+  })
+
+  it('CUE returns the track to the top, parked', async () => {
+    const { result, channel } = await loadedDeck()
+    await act(async () => result.current.prime())
+    expect(channel.pauseTrack).toHaveBeenCalled()
+    expect(channel.seekTrack).toHaveBeenCalledWith(0)
+    expect(result.current.primed).toBe(false)
+  })
+
+  it('refuses an empty-pad capture — the worklet history holds the dead stream', async () => {
+    const { result, channel } = await loadedDeck()
+    act(() => result.current.toggleLoopPad(0))
+    expect(channel.captureLoop).not.toHaveBeenCalled()
+  })
+
+  it('refuses a style sample for the same reason', async () => {
+    const { result, channel } = await loadedDeck()
+    let sample: Float32Array | null = new Float32Array(2)
+    await act(async () => {
+      sample = await result.current.captureStyleSample()
+    })
+    expect(sample).toBeNull()
+    expect(channel.captureSample).not.toHaveBeenCalled()
+  })
+
+  it('drops a straggler PCM chunk while parked', async () => {
+    const { channel } = await loadedDeck()
+    act(() => socket(0).onmessage?.({ data: new ArrayBuffer(16) }))
+    expect(channel.postPcm).not.toHaveBeenCalled()
+  })
+
+  it('follows the channel playhead while a track is loaded', async () => {
+    const { result, channel } = await loadedDeck()
+    vi.mocked(channel.getTrackStatus).mockReturnValue({
+      position: 42.5,
+      duration: 120,
+      playing: true,
+      ended: false,
+    })
+    act(() => void vi.advanceTimersByTime(250))
+    expect(result.current.track).toMatchObject({
+      position: 42.5,
+      playing: true,
+    })
+  })
+
+  it('leavePlayback unloads the track and returns to realtime, parked staying parked', async () => {
+    const { result, channel } = await loadedDeck()
+    const sentBefore = socket(0).sent.length
+    act(() => result.current.leavePlayback())
+    expect(channel.unloadTrack).toHaveBeenCalled()
+    expect(result.current.mode).toBe('realtime')
+    expect(result.current.track).toBeNull()
+    // The track was parked, so the deck comes back stopped.
+    expect(socket(0).sent).toHaveLength(sentBefore)
+  })
+
+  it('a primed deck loads a track parked — prep audio never hits the master', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.prime())
+    expect(result.current.state.playing).toBe(true) // rolling, but off air
+
+    await act(async () => {
+      await result.current.loadTrack(new ArrayBuffer(8), 'Headphone Special')
+    })
+    expect(channel.playTrack).not.toHaveBeenCalled()
+    expect(result.current.track).toMatchObject({ playing: false })
+  })
+
+  it('a streaming deck keeps playing through a track load', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+    expect(result.current.state.playing).toBe(true)
+
+    await act(async () => {
+      await result.current.loadTrack(new ArrayBuffer(8), 'Hot Swap')
+    })
+    expect(channel.playTrack).toHaveBeenCalled()
+    expect(result.current.track).toMatchObject({
+      title: 'Hot Swap',
+      playing: true,
+    })
+  })
+
+  it('nudgeTrack seeks relative to the channel playhead, not the polled state', async () => {
+    const { result, channel } = await loadedDeck()
+    vi.mocked(channel.getTrackStatus).mockReturnValue({
+      position: 10,
+      duration: 120,
+      playing: true,
+      ended: false,
+    })
+    act(() => result.current.nudgeTrack(2.5))
+    expect(channel.seekTrack).toHaveBeenCalledWith(12.5)
+  })
+
+  it('a rolling track hands straight back to the stream on leaving', async () => {
+    const { result, channel } = await loadedDeck()
+    vi.mocked(channel.getTrackStatus).mockReturnValue({
+      position: 10,
+      duration: 120,
+      playing: true,
+      ended: false,
+    })
+    const sentBefore = socket(0).sent.length
+    await act(async () => result.current.leavePlayback())
+    expect(channel.unloadTrack).toHaveBeenCalled()
+    expect(result.current.mode).toBe('realtime')
+    expect(socket(0).sent.slice(sentBefore)).toContain(
+      JSON.stringify({ type: 'play' }),
+    )
+    expect(result.current.state.playing).toBe(true)
   })
 })

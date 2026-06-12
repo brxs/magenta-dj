@@ -16,7 +16,7 @@ import {
 } from './control/flx4'
 import { MidiControls } from './control/MidiControls'
 import { useMidi } from './control/useMidi'
-import { CrateBrowser } from './crates/CrateBrowser'
+import { MediaExplorer } from './media/MediaExplorer'
 import { DeckColumn } from './deck/DeckColumn'
 import { useDeck } from './deck/useDeck'
 import { MixerStrip, type ChannelControls } from './mixer/MixerStrip'
@@ -197,15 +197,29 @@ function App() {
 
   // Loading a preset: this component owns the FX half (via the deck
   // controls); the pad half rides the bus to the owning DeckColumn,
-  // which applies targets + cursor and sends the style.
+  // which applies targets + cursor and sends the style. A crate is a
+  // realtime item, so loading one exits playback mode (ADR-0013).
   const handleLoadPreset = useCallback(
     (deck: DeckId, preset: StylePreset) => {
       const controls = deck === 'a' ? deckA : deckB
+      controls.leavePlayback()
       controls.setFx(preset.fx.kind)
       controls.setFxAmount(preset.fx.amount)
       bus.publish({ kind: 'preset_load', deck, preset })
     },
     [deckA, deckB, bus],
+  )
+
+  // Track items flip the deck to playback; the live-stream item is the
+  // way back (ADR-0013: loading decides the mode).
+  const handleLoadTrack = useCallback(
+    (deck: DeckId, wav: ArrayBuffer, title: string) =>
+      (deck === 'a' ? deckA : deckB).loadTrack(wav, title),
+    [deckA, deckB],
+  )
+  const handleLoadLive = useCallback(
+    (deck: DeckId) => (deck === 'a' ? deckA : deckB).leavePlayback(),
+    [deckA, deckB],
   )
 
   const midi = useMidi()
@@ -360,6 +374,11 @@ function App() {
           onSampleOtherDeck={handleSampleForA}
           canSample={deckB.state.playing}
           onSavePreset={handleSavePreset}
+          mode={deckA.mode}
+          track={deckA.track}
+          onLeavePlayback={deckA.leavePlayback}
+          onSeekTrack={deckA.seekTrack}
+          getTrackPeaks={deckA.getTrackPeaks}
         />
         <div className="app__center">
           <MixerStrip
@@ -370,12 +389,6 @@ function App() {
             onCueMixChange={handleCueMix}
             cueDevice={cueDevice}
             onCueDeviceChange={handleCueDevice}
-          />
-          <CrateBrowser
-            presets={presets}
-            onLoad={handleLoadPreset}
-            onDelete={handleDeletePreset}
-            onImport={handleImportPresets}
           />
         </div>
         <DeckColumn
@@ -402,8 +415,21 @@ function App() {
           onSampleOtherDeck={handleSampleForB}
           canSample={deckA.state.playing}
           onSavePreset={handleSavePreset}
+          mode={deckB.mode}
+          track={deckB.track}
+          onLeavePlayback={deckB.leavePlayback}
+          onSeekTrack={deckB.seekTrack}
+          getTrackPeaks={deckB.getTrackPeaks}
         />
       </div>
+      <MediaExplorer
+        presets={presets}
+        onLoadPreset={handleLoadPreset}
+        onDeletePreset={handleDeletePreset}
+        onImportPresets={handleImportPresets}
+        onLoadTrack={handleLoadTrack}
+        onLoadLive={handleLoadLive}
+      />
     </main>
   )
 }

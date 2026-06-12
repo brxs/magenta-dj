@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { initialDeckState, type DeckState } from '../deck/deckState'
 import type { DeckControls } from '../deck/useDeck'
-import { applyAppIntent } from './appIntents'
+import { applyAppIntent, JOG_SEEK_SECONDS } from './appIntents'
 
 function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
   return {
@@ -26,6 +26,13 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     generateError: null,
     bpm: null,
     captureStyleSample: vi.fn(async () => null),
+    mode: 'realtime' as const,
+    track: null,
+    loadTrack: vi.fn(async () => true),
+    leavePlayback: vi.fn(),
+    seekTrack: vi.fn(),
+    nudgeTrack: vi.fn(),
+    getTrackPeaks: vi.fn(() => null),
     trim: { mode: 'auto' as const, db: 0 },
     setTrimDb: vi.fn(),
     enableAutoTrim: vi.fn(),
@@ -210,5 +217,62 @@ describe('applyAppIntent', () => {
     expect(a.play).not.toHaveBeenCalled()
     expect(a.setStyle).not.toHaveBeenCalled()
     expect(onCrossfade).not.toHaveBeenCalled()
+  })
+
+  function playbackDeck(playing: boolean) {
+    return {
+      ...fakeDeck(),
+      mode: 'playback' as const,
+      track: {
+        loadId: 1,
+        title: 'Warehouse Anthem',
+        duration: 120,
+        position: 30,
+        playing,
+        ended: false,
+        bpm: null,
+      },
+    }
+  }
+
+  it('play_toggle on a playback deck answers to the track, not the worker', () => {
+    // state.playing is honestly false while the worker is parked; the
+    // pause decision must come from the track (M19, ADR-0013).
+    const playing = playbackDeck(true)
+    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(playing), noHandlers)
+    expect(playing.stop).toHaveBeenCalled()
+    expect(playing.play).not.toHaveBeenCalled()
+
+    const paused = playbackDeck(false)
+    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(paused), noHandlers)
+    expect(paused.play).toHaveBeenCalled()
+    expect(paused.stop).not.toHaveBeenCalled()
+  })
+
+  it('deck_prep on a playback deck returns the track to the top', () => {
+    const playing = playbackDeck(true)
+    applyAppIntent({ kind: 'deck_prep', deck: 'a' }, decks(playing), noHandlers)
+    expect(playing.prime).toHaveBeenCalled()
+    expect(playing.stop).not.toHaveBeenCalled()
+  })
+
+  it('jog ticks seek a playback deck, scaled to seconds', () => {
+    const deck = playbackDeck(true)
+    applyAppIntent(
+      { kind: 'track_seek', deck: 'a', steps: 3 },
+      decks(deck),
+      noHandlers,
+    )
+    expect(deck.nudgeTrack).toHaveBeenCalledWith(3 * JOG_SEEK_SECONDS)
+  })
+
+  it('a realtime deck ignores jog ticks — still no scratch concept', () => {
+    const deck = fakeDeck({ playing: true })
+    applyAppIntent(
+      { kind: 'track_seek', deck: 'a', steps: 3 },
+      decks(deck),
+      noHandlers,
+    )
+    expect(deck.nudgeTrack).not.toHaveBeenCalled()
   })
 })

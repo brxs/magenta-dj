@@ -8,7 +8,7 @@ import { ControlBusProvider } from '../control/ControlBusProvider'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import { DeckColumn } from './DeckColumn'
 import { initialDeckState, type DeckState } from './deckState'
-import type { LoopState } from './useDeck'
+import type { DeckMode, LoopState, TrackState } from './useDeck'
 
 const noop = () => {}
 
@@ -27,6 +27,10 @@ function renderPanel(
   bpm: number | null = null,
   canSample = true,
   generateError: string | null = null,
+  playback: { mode: DeckMode; track: TrackState | null } = {
+    mode: 'realtime',
+    track: null,
+  },
 ) {
   return render(
     <ControlBusProvider bus={bus}>
@@ -67,6 +71,11 @@ function renderPanel(
         onSavePreset={
           (handlers.onSavePreset as (preset: object) => void) ?? noop
         }
+        mode={playback.mode}
+        track={playback.track}
+        onLeavePlayback={handlers.onLeavePlayback ?? noop}
+        onSeekTrack={(handlers.onSeekTrack as (s: number) => void) ?? noop}
+        getTrackPeaks={() => null}
       />
     </ControlBusProvider>,
   )
@@ -272,6 +281,11 @@ describe('DeckColumn', () => {
           onSampleOtherDeck={async () => null}
           canSample
           onSavePreset={noop as (preset: object) => void}
+          mode="realtime"
+          track={null}
+          onLeavePlayback={noop}
+          onSeekTrack={noop as (s: number) => void}
+          getTrackPeaks={() => null}
         />
       </ControlBusProvider>,
     )
@@ -735,6 +749,11 @@ describe('DeckColumn', () => {
             onSampleOtherDeck={onSampleOtherDeck}
             canSample
             onSavePreset={noop as (preset: object) => void}
+            mode="realtime"
+            track={null}
+            onLeavePlayback={noop}
+            onSeekTrack={noop as (s: number) => void}
+            getTrackPeaks={() => null}
           />
         </ControlBusProvider>
       </StrictMode>,
@@ -837,6 +856,11 @@ describe('DeckColumn', () => {
           onSampleOtherDeck={async () => null}
           canSample
           onSavePreset={noop as (preset: object) => void}
+          mode="realtime"
+          track={null}
+          onLeavePlayback={noop}
+          onSeekTrack={noop as (s: number) => void}
+          getTrackPeaks={() => null}
         />
       </ControlBusProvider>,
     )
@@ -1154,5 +1178,93 @@ describe('DeckColumn', () => {
       target: { value: '8' },
     })
     expect(onSetLoopSeconds).toHaveBeenCalledWith(8)
+  })
+})
+
+describe('DeckColumn playback mode (M19)', () => {
+  const aTrack = (overrides: Partial<TrackState> = {}): TrackState => ({
+    loadId: 1,
+    title: 'Warehouse Anthem',
+    duration: 125,
+    position: 65.4,
+    playing: false,
+    ended: false,
+    bpm: 132.5,
+    ...overrides,
+  })
+
+  function renderPlayback(
+    track: TrackState,
+    handlers: Record<string, () => void> = {},
+  ) {
+    return renderPanel(
+      { connection: 'open' },
+      handlers,
+      createControlBus(),
+      { kind: null, amount: 0 },
+      emptyLoop(),
+      null,
+      true,
+      null,
+      { mode: 'playback', track },
+    )
+  }
+
+  it('swaps the style pane for the track overview, title, and status', () => {
+    renderPlayback(aTrack())
+    expect(screen.queryByLabelText('Style pad')).toBeNull()
+    expect(screen.queryByLabelText('Model')).toBeNull()
+    expect(
+      screen.getByRole('slider', { name: 'Track overview a' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Warehouse Anthem')).toBeInTheDocument()
+    expect(screen.getByText('Track — paused')).toBeInTheDocument()
+  })
+
+  it('reads the transport from the track, not the worker', () => {
+    const onStop = vi.fn()
+    renderPlayback(aTrack({ playing: true }), { onStop })
+    // state.playing is false — the lit STOP belongs to the track.
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(onStop).toHaveBeenCalled()
+    expect(screen.getByText('Track — playing')).toBeInTheDocument()
+  })
+
+  it('shows the track clock instead of the stream plumbing', () => {
+    renderPlayback(aTrack())
+    const position = screen.getByText('Position').parentElement!
+    expect(position).toHaveTextContent('1:05 / 2:05')
+    const stat = screen.getByText('BPM').parentElement!
+    expect(stat).toHaveTextContent('132.5')
+    expect(screen.queryByText('Buffer')).toBeNull()
+    expect(screen.queryByText('Underruns')).toBeNull()
+  })
+
+  it('seeks from the overview with the keyboard', () => {
+    const onSeekTrack = vi.fn()
+    renderPlayback(aTrack(), {
+      onSeekTrack: onSeekTrack as unknown as () => void,
+    })
+    const slider = screen.getByRole('slider', { name: 'Track overview a' })
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    expect(onSeekTrack).toHaveBeenCalledWith(70.4)
+    fireEvent.keyDown(slider, { key: 'Home' })
+    expect(onSeekTrack).toHaveBeenCalledWith(0)
+    fireEvent.keyDown(slider, { key: 'End' })
+    expect(onSeekTrack).toHaveBeenCalledWith(125)
+  })
+
+  it('announces the explicit end-of-track state', () => {
+    renderPlayback(aTrack({ position: 125, ended: true }))
+    expect(screen.getByText('Track — ended')).toBeInTheDocument()
+  })
+
+  it('carries its own exit back to the live stream', () => {
+    // Without crates the Media Explorer's live row is the only other
+    // way out — the deck must not depend on it.
+    const onLeavePlayback = vi.fn()
+    renderPlayback(aTrack(), { onLeavePlayback })
+    fireEvent.click(screen.getByRole('button', { name: 'Back to live' }))
+    expect(onLeavePlayback).toHaveBeenCalled()
   })
 })

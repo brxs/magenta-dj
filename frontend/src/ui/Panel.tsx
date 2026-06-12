@@ -6,13 +6,18 @@ export function Panel({
   label,
   className,
   children,
+  'aria-label': ariaLabel,
 }: {
   label?: string
   className?: string
   children: ReactNode
+  'aria-label'?: string
 }) {
   return (
-    <section className={`ui-panel${className ? ` ${className}` : ''}`}>
+    <section
+      className={`ui-panel${className ? ` ${className}` : ''}`}
+      aria-label={ariaLabel}
+    >
       {label && <span className="ui-panel__label">{label}</span>}
       {children}
     </section>

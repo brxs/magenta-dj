@@ -38,6 +38,7 @@ import {
   LIMITER_THRESHOLD_DB,
 } from './master'
 import { interleaveChannels, MIN_STYLE_SAMPLE_SECONDS } from './styleSample'
+import { clampOffset, positionAt, trackPeaks, type TrackTransport } from './track'
 import { encodeWav, floatToInt16 } from './wav'
 
 export type DeckId = 'a' | 'b'
@@ -88,6 +89,37 @@ export type DeckChannel = {
   /** Style sampling (M15): the just-played tail as wire-format PCM,
    * or null when too little has played to embed meaningfully. */
   captureSample: (seconds: number) => Promise<Float32Array<ArrayBuffer> | null>
+  /** Playback mode (M19, ADR-0013): decode a whole track into the
+   * channel. Resolves to its duration plus live views of the decoded
+   * channels (for the offline BPM pass — no second decode), or null
+   * when the body doesn't decode. Replaces any previous track. */
+  loadTrack: (wav: ArrayBuffer) => Promise<{
+    duration: number
+    sampleRate: number
+    left: Float32Array
+    right: Float32Array
+  } | null>
+  /** Start (or resume) the track; from the ended state it restarts at
+   * the top. False with no track loaded. */
+  playTrack: () => boolean
+  /** Park the playhead where it is. */
+  pauseTrack: () => void
+  /** Jump the playhead; whether it was playing is preserved. */
+  seekTrack: (seconds: number) => void
+  /** Playhead snapshot, or null with no track loaded. The end is an
+   * explicit state: silence with the position parked (ADR-0013). */
+  getTrackStatus: () => {
+    position: number
+    duration: number
+    playing: boolean
+    ended: boolean
+  } | null
+  /** Static min/max envelope of the loaded track for the overview. */
+  getTrackPeaks: (
+    buckets: number,
+  ) => { min: Float32Array; max: Float32Array } | null
+  /** Drop the track — leaving playback mode frees the buffer. */
+  unloadTrack: () => void
   /** Post-fader RMS level, 0..~1 (for channel meters). */
   getLevel: () => number
   /** Min/max of the latest audio window, -1..1 (for waveform strips). */
@@ -453,6 +485,44 @@ export function createAudioEngine(): AudioEngine {
         fadingLoopSource?.stop(at)
       }
 
+      // Playback mode (M19, ADR-0013): one decoded track per channel,
+      // played as a buffer source through the live gain — so the
+      // freeze-pad handover, which ramps that gain, treats a track
+      // exactly like the stream. The worklet stays connected, silent.
+      let trackBuffer: AudioBuffer | null = null
+      let trackSource: AudioBufferSourceNode | null = null
+      let trackTransport: TrackTransport = { state: 'paused', offset: 0 }
+      function stopTrackSource() {
+        const source = trackSource
+        if (!source) return
+        trackSource = null
+        // Reassign before stop: a manual stop (pause, seek, unload)
+        // must not read as the track ending (the one-shot precedent).
+        source.onended = () => source.disconnect()
+        source.stop()
+      }
+      function startTrackSource(offset: number) {
+        const buffer = trackBuffer
+        if (!buffer) return
+        const source = bus.context.createBufferSource()
+        source.buffer = buffer
+        source.connect(liveGain)
+        source.onended = () => {
+          source.disconnect()
+          if (trackSource !== source) return
+          trackSource = null
+          // The natural end: explicit silence, playhead parked.
+          trackTransport = { state: 'ended', offset: buffer.duration }
+        }
+        source.start(bus.context.currentTime, offset)
+        trackSource = source
+        trackTransport = {
+          state: 'playing',
+          offset,
+          startedAt: bus.context.currentTime,
+        }
+      }
+
       const cueToggle = bus.context.createGain()
       cueToggle.gain.value = initial.cue ? 1 : 0
       post.connect(cueToggle)
@@ -640,6 +710,77 @@ export function createAudioEngine(): AudioEngine {
           }
           return interleaveChannels(captured.left, captured.right)
         },
+        async loadTrack(wav) {
+          let decoded: AudioBuffer
+          try {
+            decoded = await bus.context.decodeAudioData(wav)
+          } catch {
+            return null
+          }
+          stopTrackSource()
+          trackBuffer = decoded
+          trackTransport = { state: 'paused', offset: 0 }
+          return {
+            duration: decoded.duration,
+            sampleRate: decoded.sampleRate,
+            left: channelData(decoded, 0),
+            right: channelData(decoded, 1),
+          }
+        },
+        playTrack() {
+          if (!trackBuffer) return false
+          if (trackTransport.state === 'playing') return true
+          const offset =
+            trackTransport.state === 'ended' ? 0 : trackTransport.offset
+          startTrackSource(offset)
+          return true
+        },
+        pauseTrack() {
+          if (!trackBuffer || trackTransport.state !== 'playing') return
+          const offset = positionAt(
+            trackTransport,
+            bus.context.currentTime,
+            trackBuffer.duration,
+          )
+          stopTrackSource()
+          trackTransport = { state: 'paused', offset }
+        },
+        seekTrack(seconds) {
+          if (!trackBuffer) return
+          const offset = clampOffset(seconds, trackBuffer.duration)
+          if (trackTransport.state === 'playing') {
+            stopTrackSource()
+            startTrackSource(offset)
+          } else {
+            trackTransport = { state: 'paused', offset }
+          }
+        },
+        getTrackStatus() {
+          if (!trackBuffer) return null
+          return {
+            position: positionAt(
+              trackTransport,
+              bus.context.currentTime,
+              trackBuffer.duration,
+            ),
+            duration: trackBuffer.duration,
+            playing: trackTransport.state === 'playing',
+            ended: trackTransport.state === 'ended',
+          }
+        },
+        getTrackPeaks(buckets) {
+          if (!trackBuffer) return null
+          return trackPeaks(
+            channelData(trackBuffer, 0),
+            channelData(trackBuffer, 1),
+            buckets,
+          )
+        },
+        unloadTrack() {
+          stopTrackSource()
+          trackBuffer = null
+          trackTransport = { state: 'paused', offset: 0 }
+        },
         getLevel() {
           return rmsLevel(analyser, analyserBuffer)
         },
@@ -653,6 +794,7 @@ export function createAudioEngine(): AudioEngine {
           cutFadingLoopSource(bus.context.currentTime)
           stopLoopSource(bus.context.currentTime)
           stopOneShotSource()
+          stopTrackSource()
           liveGain.disconnect()
           loopGain.disconnect()
           trim.disconnect()

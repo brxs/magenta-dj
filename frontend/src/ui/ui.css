@@ -315,6 +315,45 @@
   box-shadow: var(--inset-border);
 }
 
+/* ---------- track overview (playback deck) ---------- */
+
+.ui-trackoverview {
+  position: relative;
+  width: 100%;
+  height: 3.5rem;
+  background: var(--color-surface-inset);
+  border-radius: var(--radius-s);
+  box-shadow: var(--inset-border);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.ui-trackoverview:focus-visible {
+  outline: 1px solid var(--color-accent);
+  outline-offset: -1px;
+}
+
+.ui-trackoverview--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ui-trackoverview__canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.ui-trackoverview__playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--color-accent);
+  pointer-events: none;
+}
+
 /* ---------- buffer meter (health row) ---------- */
 
 .ui-meter {

@@ -1,0 +1,125 @@
+/* Media Explorer (M19, ADR-0013): the booth's loading surface — crates,
+   generated tracks, and folder tracks share one pane below the decks. */
+
+.media {
+  max-height: 18rem;
+  overflow: auto;
+}
+
+.media__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.media__title {
+  font: var(--silkscreen);
+  letter-spacing: var(--silkscreen-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-silkscreen);
+  margin: 0;
+}
+
+.media__tabs {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.media__live {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.media__live-label {
+  font: var(--silkscreen);
+  letter-spacing: var(--silkscreen-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-silkscreen);
+}
+
+.media__generate,
+.media__folder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.media__generate-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+}
+
+.media__folder-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.media__folder-name {
+  font: 400 var(--text-s) var(--font-mono);
+  color: var(--color-text-muted);
+}
+
+.media__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.media__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-s);
+}
+
+.media__item--highlighted {
+  background: var(--color-surface-raised);
+  box-shadow: var(--inset-border);
+}
+
+.media__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 var(--text-m) var(--font-ui);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.media__name--button {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.media__meta {
+  font: var(--silkscreen);
+  letter-spacing: var(--silkscreen-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-silkscreen);
+  white-space: nowrap;
+}
+
+.media__empty {
+  font: 400 var(--text-s) var(--font-ui);
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.media__error {
+  font: 400 var(--text-s) var(--font-ui);
+  color: var(--color-led-danger);
+  margin: 0;
+}

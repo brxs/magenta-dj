@@ -14,25 +14,41 @@ import pathlib
 import tempfile
 
 # CLI vocabulary of scripts/sa3_mlx.py at the pinned commit (bccf5b7).
-KINDS = {"sfx": "sm-sfx", "music": "sm-music"}
-DECODER = "same-s"
+# Pads use the small DiTs with the SAME-S decoder; tracks (M19, ADR-0013)
+# the medium DiT, which pairs with SAME-L.
+KINDS = {"sfx": "sm-sfx", "music": "sm-music", "track": "medium"}
+DECODERS = {"sfx": "same-s", "music": "same-s", "track": "same-l"}
 SAMPLER_STEPS = 8
 
 MIN_SECONDS = 0.5
 MAX_SECONDS = 32.0
+# Stability's published ceiling for the medium DiT (6:20).
+TRACK_MAX_SECONDS = 380.0
+MAX_SECONDS_FOR = {"sfx": MAX_SECONDS, "music": MAX_SECONDS, "track": TRACK_MAX_SECONDS}
 MAX_PROMPT_LENGTH = 500
 
-# Measured generation is ~1.5 s; the margin covers a cold filesystem cache
-# and slower machines, not a first-ever weight download (see SETUP_HINT).
+# Measured small-DiT generation is ~1.5 s; the margin covers a cold
+# filesystem cache and slower machines, not a first-ever weight download
+# (see SETUP_HINT).
 TIMEOUT_SECONDS = 120
 
 SETUP_HINT = (
-    "sa3_mlx checkout not found - clone "
-    "https://github.com/Stability-AI/stable-audio-3 to ~/Repos or "
-    "~/Documents/Magenta (or set SA3_MLX_HOME), run its "
-    "optimized/mlx/install.sh, and generate one clip manually so the "
-    "weights download outside a request"
+    "sa3_mlx checkout not found - run `just setup-sa3` (clones "
+    "https://github.com/Stability-AI/stable-audio-3, installs its MLX venv, "
+    "and pre-warms all three DiTs' weights, ~8 GB), or point SA3_MLX_HOME "
+    "at an existing checkout"
 )
+
+
+def timeout_for(seconds: float) -> float:
+    """Deadline for one generation, scaled to the requested length.
+
+    The published medium benchmark is ~15 s wall for a 2-minute track on
+    M4-Pro-class hardware, so a second of deadline per second of audio is
+    ~8x slack on top of the flat base — a wedge kill-switch, not a UX
+    promise (ADR-0013)."""
+    return TIMEOUT_SECONDS + seconds
+
 
 _generation_lock = asyncio.Semaphore(1)
 
@@ -91,7 +107,7 @@ async def generate(prompt: str, seconds: float, kind: str) -> bytes:
                 "--dit",
                 KINDS[kind],
                 "--decoder",
-                DECODER,
+                DECODERS[kind],
                 "--seconds",
                 f"{seconds:g}",
                 "--steps",
@@ -102,15 +118,16 @@ async def generate(prompt: str, seconds: float, kind: str) -> bytes:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
             )
+            timeout = timeout_for(seconds)
             try:
                 output, _ = await asyncio.wait_for(
-                    process.communicate(), timeout=TIMEOUT_SECONDS
+                    process.communicate(), timeout=timeout
                 )
             except TimeoutError:
                 process.kill()
                 await process.wait()
                 raise GenerationFailed(
-                    f"generation timed out after {TIMEOUT_SECONDS}s"
+                    f"generation timed out after {timeout:g}s"
                 ) from None
             if process.returncode != 0 or not out_path.is_file():
                 # The CLI's last lines name the problem; progress bars and

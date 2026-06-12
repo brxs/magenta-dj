@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import type { DeckId } from '../audio/engine'
@@ -12,6 +12,7 @@ import { Panel } from '../ui/Panel'
 import { Select } from '../ui/Select'
 import { Stat } from '../ui/Stat'
 import { TextField } from '../ui/TextField'
+import { TrackOverview, TRACK_OVERVIEW_BUCKETS } from '../ui/TrackOverview'
 import { TransportButton } from '../ui/TransportButton'
 import { WaveformStrip } from '../ui/WaveformStrip'
 import { XYPad } from '../ui/XYPad'
@@ -22,7 +23,13 @@ import {
   MAX_PRESET_TARGETS,
   type StylePreset,
 } from '../presets'
-import { GENERATE_PROMPT_MAX_LENGTH, type GenerateEngine, type LoopState } from './useDeck'
+import {
+  GENERATE_PROMPT_MAX_LENGTH,
+  type DeckMode,
+  type GenerateEngine,
+  type LoopState,
+  type TrackState,
+} from './useDeck'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import './deck.css'
 
@@ -65,6 +72,11 @@ function createSendThrottle(intervalMs: number) {
   }
 }
 
+function formatTrackTime(seconds: number): string {
+  const whole = Math.floor(seconds)
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
+}
+
 type DeckColumnProps = {
   deckId: DeckId
   state: DeckState
@@ -101,6 +113,17 @@ type DeckColumnProps = {
   canSample: boolean
   /** Crates (M16): save this deck's pad + FX as a named preset. */
   onSavePreset: (preset: StylePreset) => void
+  /** Playback mode (M19, ADR-0013): in 'playback' the style pane swaps
+   * for the loaded track's overview and the transport drives it. */
+  mode: DeckMode
+  track: TrackState | null
+  /** The deck-local exit from playback — back to the live stream
+   * without a trip to the Media Explorer. */
+  onLeavePlayback: () => void
+  onSeekTrack: (seconds: number) => void
+  getTrackPeaks: (
+    buckets: number,
+  ) => { min: Float32Array; max: Float32Array } | null
 }
 
 export function DeckColumn({
@@ -127,6 +150,11 @@ export function DeckColumn({
   onSampleOtherDeck,
   canSample,
   onSavePreset,
+  mode,
+  track,
+  onLeavePlayback,
+  onSeekTrack,
+  getTrackPeaks,
 }: DeckColumnProps) {
   const { t } = useTranslation()
   const [targets, setTargets] = useState<
@@ -178,7 +206,14 @@ export function DeckColumn({
     if (!canGenerate) return
     onGenerateToPad(generateDraft, generateEngine, generateOneShot)
   }
-  const statusKey = state.switchingModel
+  const statusKey =
+    mode === 'playback'
+      ? track?.ended
+        ? 'deck.status.trackEnded'
+        : track?.playing
+          ? 'deck.status.trackPlaying'
+          : 'deck.status.trackPaused'
+      : state.switchingModel
     ? 'deck.status.loadingModel'
     : loop.active !== null && connected
       ? 'deck.status.frozen'
@@ -192,6 +227,15 @@ export function DeckColumn({
   const bufferFraction = state.bufferedSeconds / BUFFER_TARGET_SECONDS
   const bufferTone =
     !state.playing || bufferFraction >= 0.5 ? 'ok' : bufferFraction >= 0.25 ? 'warn' : 'danger'
+
+  // The overview envelope is static per track — recompute only when a
+  // different load lands (the monotonic id; titles can repeat), not on
+  // every playhead tick.
+  const trackKey = track ? track.loadId : null
+  const trackPeaksData = useMemo(
+    () => (trackKey === null ? null : getTrackPeaks(TRACK_OVERVIEW_BUCKETS)),
+    [trackKey, getTrackPeaks],
+  )
 
   type Target = PadPoint & { text: string; sample?: string }
 
@@ -464,15 +508,38 @@ export function DeckColumn({
       </header>
 
       {/* Deliberately usable while the worker is dead: switching to a model
-          that fits is the recovery path when the chosen one cannot load. */}
-      <Select
-        label={t('deck.model.label')}
-        value={state.model ?? ''}
-        options={state.availableModels.length ? state.availableModels : [state.model ?? '']}
-        disabled={!connected || state.switchingModel}
-        onChange={onSetModel}
-      />
+          that fits is the recovery path when the chosen one cannot load.
+          Hidden in playback — the worker is parked (ADR-0013). */}
+      {mode !== 'playback' && (
+        <Select
+          label={t('deck.model.label')}
+          value={state.model ?? ''}
+          options={state.availableModels.length ? state.availableModels : [state.model ?? '']}
+          disabled={!connected || state.switchingModel}
+          onChange={onSetModel}
+        />
+      )}
 
+      {/* Playback mode (M19, ADR-0013): the style pane gives way to the
+          loaded track — its envelope is the deck's seekable surface. */}
+      {mode === 'playback' && track ? (
+        <Panel className="deck__style">
+          <TrackOverview
+            label={t('deck.track.overview', { id: deckId })}
+            peaks={trackPeaksData}
+            position={track.position}
+            duration={track.duration}
+            accent={deckId}
+            onSeek={onSeekTrack}
+          />
+          <div className="deck__track-row">
+            <p className="deck__active-prompt">{track.title}</p>
+            <Button onClick={onLeavePlayback}>
+              {t('deck.track.backToLive')}
+            </Button>
+          </div>
+        </Panel>
+      ) : (
       <Panel className="deck__style">
         <div className="deck__prompt-row">
           <TextField
@@ -607,6 +674,7 @@ export function DeckColumn({
           </Button>
         </div>
       </Panel>
+      )}
 
       <div className="deck__fx" role="group" aria-label={t('deck.fx.title')}>
         <div className="deck__fx-select">
@@ -737,13 +805,13 @@ export function DeckColumn({
       )}
 
       <div className="deck__transport">
-        {state.playing ? (
+        {(mode === 'playback' ? (track?.playing ?? false) : state.playing) ? (
           <TransportButton
             kind="stop"
             accent={deckId}
             lit
             label={t('deck.stop')}
-            disabled={!operable}
+            disabled={mode === 'playback' ? track === null : !operable}
             onClick={onStop}
           />
         ) : (
@@ -751,10 +819,30 @@ export function DeckColumn({
             kind="play"
             accent={deckId}
             label={t('deck.play')}
-            disabled={!operable}
+            disabled={mode === 'playback' ? track === null : !operable}
             onClick={onPlay}
           />
         )}
+        {mode === 'playback' && track ? (
+          /* A track's health is its clock, not the stream's plumbing. */
+          <div className="deck__health">
+            <Stat
+              label={t('deck.health.position')}
+              value={t('deck.track.time', {
+                position: formatTrackTime(track.position),
+                duration: formatTrackTime(track.duration),
+              })}
+            />
+            <Stat
+              label={t('deck.health.bpm')}
+              value={
+                track.bpm === null
+                  ? t('deck.health.noData')
+                  : track.bpm.toFixed(1)
+              }
+            />
+          </div>
+        ) : (
         <div className="deck__health">
           <Meter
             label={t('deck.health.buffer')}
@@ -789,6 +877,7 @@ export function DeckColumn({
             }
           />
         </div>
+        )}
       </div>
 
       {state.workerDied && (

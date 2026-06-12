@@ -65,6 +65,9 @@ export function isPadModeSwitch(data: ArrayLike<number>): boolean {
 
 const CC_DECK: Partial<Record<number, DeckId>> = { 0xb0: 'a', 0xb1: 'b' }
 const MIXER_STATUS = 0xb6
+/** Jog wheel turn CCs (platter touched / rim), relative around 0x40 —
+ * the Pioneer scheme per the Mixxx chart; confirm with the monitor. */
+const JOG_CCS = [0x21, 0x22]
 const LSB_OFFSET = 0x20
 const MAX_14BIT = (127 << 7) | 127
 /** Browse rotary (M16): a RELATIVE encoder on the mixer status — small
@@ -75,6 +78,10 @@ const BROWSE_CC = 0x40
 /** LOAD buttons (M16): their own status byte, one note per deck. */
 const LOAD_STATUS = 0x96
 const LOAD_NOTE_DECK: Partial<Record<number, DeckId>> = { 0x46: 'a', 0x47: 'b' }
+/** Rotary press (M19): interpolated from the DDJ-400 family chart —
+ * the Mixxx FLX4 map defines no press control. Confirm with the
+ * monitor (docs/midi-ddj-flx4.md). */
+const BROWSE_PRESS_NOTE = 0x41
 
 /** Builders keyed by MSB CC number, per status byte. The LSB lives on
  * CC+0x20 and is resolved back to these entries. Resolved per message,
@@ -169,7 +176,10 @@ function buttonIntent(
   }
   const loadDeck = LOAD_NOTE_DECK[note]
   if (status === LOAD_STATUS && loadDeck) {
-    return { kind: 'crate_load', deck: loadDeck }
+    return { kind: 'browse_load', deck: loadDeck }
+  }
+  if (status === LOAD_STATUS && note === BROWSE_PRESS_NOTE) {
+    return { kind: 'browse_tab' }
   }
   return null
 }
@@ -198,9 +208,19 @@ export function createFlx4Translator(): Flx4Translator {
     if (status === MIXER_STATUS && number === BROWSE_CC) {
       if (value === 0 || value === 0x40) return null
       return {
-        kind: 'crate_scroll',
+        kind: 'browse_scroll',
         steps: value < 0x40 ? value : value - 0x80,
       }
+    }
+
+    // Jog wheels are relative too, 0x40-centred (0x41 = +1 tick CW,
+    // 0x3F = −1): intercepted before the absolute MSB/LSB machinery.
+    // Only a playback deck acts on them (App-side); the live stream
+    // still has no scratch concept (ADR-0004).
+    const jogDeck = CC_DECK[status]
+    if (jogDeck && JOG_CCS.includes(number)) {
+      if (value === 0x40) return null
+      return { kind: 'track_seek', deck: jogDeck, steps: value - 0x40 }
     }
 
     const msbBuild = ccBuilder(status, number, shiftHeld)

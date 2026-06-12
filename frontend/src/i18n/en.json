@@ -18,6 +18,42 @@
       "empty": "monitoring…"
     }
   },
+  "media": {
+    "title": "Media explorer",
+    "tabs": {
+      "crates": "Crates",
+      "generate": "Generate",
+      "folder": "Folder"
+    },
+    "live": "Live stream",
+    "loadShort": "→ {{deck}}",
+    "loadTo": "Load {{name}} to deck {{deck}}",
+    "highlight": "Select {{name}}",
+    "remove": "Remove {{name}}",
+    "save": "Save {{name}}",
+    "saveShort": "Save",
+    "undecodable": "{{title}} could not be decoded",
+    "generate": {
+      "prompt": "Track prompt",
+      "engine": "Engine",
+      "engines": {
+        "sfx": "SFX (SA3 small)",
+        "music": "Music (SA3 small)",
+        "track": "Track (SA3 medium)",
+        "magenta": "Magenta"
+      },
+      "length": "Length",
+      "action": "Compose",
+      "pending": "{{title}} — composing…",
+      "failed": "Track generation failed: {{message}}",
+      "empty": "No tracks yet — compose one from a prompt."
+    },
+    "folder": {
+      "choose": "Choose folder",
+      "unsupported": "Folder browsing needs Chromium's File System Access API",
+      "empty": "No audio files in {{name}}"
+    }
+  },
   "crates": {
     "title": "Crates",
     "empty": "No presets yet — save a deck's style below its pad",
@@ -130,7 +166,16 @@
       "disconnected": "Disconnected — retrying",
       "loadingModel": "Loading model…",
       "primed": "Primed — off air",
-      "frozen": "Frozen — looping"
+      "frozen": "Frozen — looping",
+      "trackPlaying": "Track — playing",
+      "trackPaused": "Track — paused",
+      "trackEnded": "Track — ended"
+    },
+    "track": {
+      "title": "Track",
+      "overview": "Track overview {{id}}",
+      "time": "{{position}} / {{duration}}",
+      "backToLive": "Back to live"
     },
     "health": {
       "buffer": "Buffer",
@@ -139,7 +184,8 @@
       "underruns": "Underruns",
       "generationSpeed": "Gen speed",
       "generationSpeedValue": "{{rtf}}×",
-      "noData": "—"
+      "noData": "—",
+      "position": "Position"
     },
     "error": {
       "message": "Deck error: {{message}}"
