@@ -261,26 +261,39 @@ checklist.
 **Status: ⬜ planned.**
 
 **Goal:** the visual half of beat-matching — stacked, beat-aligned,
-scrolling close-up waveforms for both decks, rekordbox-style. The
-honest catch: today's per-deck strip is decorative (a post-fader
-analyser window); this milestone makes the close-up sample-accurate.
+scrolling **band-coloured** close-up waveforms for both decks
+(lows/mids/highs as colour, amplitude as height — the rekordbox
+convention; a true spectrogram is a later renderer mode), with beat
+marks from each deck's M20 clock. The honest catch: today's per-deck
+strip is decorative (a post-fader analyser window); this milestone
+makes the close-up sample-accurate. M20 already built the hard
+prerequisites: the worklet reports played frames in the audio clock,
+and both decks carry beat clocks to draw marks from.
 
 Scope, ordered by risk:
 
 1. **Sample-accurate sources.** Track deck: slice the decoded buffer
-   around the playhead (cheap, exact). Live deck: a real feed from the
-   pushed PCM (the beat tracker's tap), aligned to the played position
-   via the ring's clock — the risky half; measure before promising.
+   around the playhead (cheap, exact; band envelopes computed offline
+   at load). Live deck: a real feed from the pushed PCM (the beat
+   tracker's tap), aligned to the played position via the worklet's
+   consumed-frames clock (M20) — incremental band envelopes as chunks
+   arrive.
 2. **The stacked view.** Both decks' zoom strips stacked in the centre,
-   playheads fixed mid-screen, M20 beat ticks overlaid where confident;
-   canvas-rendered, no per-frame React.
-3. **Alignment truth.** When M20 says the decks are in sync, the ticks
+   playheads fixed mid-screen, beat marks overlaid where each clock is
+   confident (heavier downbeats); canvas-rendered, no per-frame React.
+3. **Layout switcher, persisted.** Three options: centre stacked
+   (between the deck columns — the beatmatch view), full-width bar
+   above the booth, and compact/off (today's per-deck strips stay the
+   minimal mode).
+4. **Alignment truth.** When M20 says the decks are in sync, the marks
    visually coincide — the view must not lie about phase.
 
 **Exit criteria:** both strips scroll in lockstep with what is heard
 (no perceptible lag against transients); a synced pair shows coinciding
-beat ticks; 60 Hz with both decks running and zero added underruns;
-verified by eye against a checklist on the device.
+beat marks; the band colouring visibly separates kicks from hats; all
+three layouts switch live and the choice survives a reload; 60 Hz with
+both decks running and zero added underruns; verified by eye against a
+checklist on the device.
 
 ## Later (not committed)
 
