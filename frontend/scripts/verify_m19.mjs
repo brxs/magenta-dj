@@ -51,10 +51,10 @@ try {
   await explorer.getByLabel('Length').selectOption('30')
   await explorer.getByRole('button', { name: 'Compose' }).click()
   await explorer
-    .getByText('deep dub techno excursion — composing…')
+    .getByText('deep dub techno excursion #1 — composing…')
     .waitFor({ timeout: 2_000 })
   await explorer
-    .getByRole('button', { name: 'Load deep dub techno excursion to deck B' })
+    .getByRole('button', { name: 'Load deep dub techno excursion #1 to deck B' })
     .waitFor({ timeout: 300_000 })
   const underrunsAfterCompose = (await underruns(deckA).textContent()).trim()
   console.log(
@@ -70,7 +70,7 @@ try {
   await page.waitForTimeout(3_000)
 
   await explorer
-    .getByRole('button', { name: 'Load deep dub techno excursion to deck B' })
+    .getByRole('button', { name: 'Load deep dub techno excursion #1 to deck B' })
     .click()
   // The rolling stream hands straight to the track — no parked gap.
   await deckB.getByText('Track — playing').waitFor({ timeout: 10_000 })

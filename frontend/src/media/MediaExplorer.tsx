@@ -12,11 +12,17 @@ import { TextField } from '../ui/TextField'
 import './media.css'
 
 type MediaTab = 'crates' | 'generate' | 'folder'
-type TrackEngine = 'track' | 'magenta'
+type TrackEngine = 'sfx' | 'music' | 'track' | 'magenta'
 
 type GeneratedTrack =
-  | { id: number; state: 'pending'; title: string }
-  | { id: number; state: 'ready'; title: string; wav: ArrayBuffer }
+  | { id: number; state: 'pending'; title: string; engine: TrackEngine }
+  | {
+      id: number
+      state: 'ready'
+      title: string
+      engine: TrackEngine
+      wav: ArrayBuffer
+    }
 
 type FolderFile = { name: string; handle: FileSystemFileHandle }
 
@@ -28,15 +34,37 @@ type DirectoryHandle = FileSystemDirectoryHandle & {
 type DirectoryPicker = { showDirectoryPicker?: () => Promise<DirectoryHandle> }
 
 const AUDIO_FILE = /\.(wav|mp3|flac|m4a|ogg|aif|aiff)$/i
-// Mirrors of the backend caps: sa3.TRACK_MAX_SECONDS for the medium
-// DiT, controller.RENDER_MAX_SECONDS for the Magenta render worker.
-const SA3_LENGTHS = [60, 120, 240, 380]
-const MAGENTA_LENGTHS = [30, 60, 120, 180]
+// Per-engine length menus, mirroring the backend caps: the small DiTs
+// stop at sa3.MAX_SECONDS (32 s), the medium track DiT at
+// sa3.TRACK_MAX_SECONDS (6:20), Magenta renders at
+// controller.RENDER_MAX_SECONDS (3:00).
+const ENGINE_LENGTHS: Record<TrackEngine, number[]> = {
+  sfx: [5, 10, 20, 30],
+  music: [5, 10, 20, 30],
+  track: [60, 120, 240, 380],
+  magenta: [30, 60, 120, 180],
+}
+const ENGINES = Object.keys(ENGINE_LENGTHS) as TrackEngine[]
 // Tracks carry no BPM stamp, so the full backend prompt cap applies.
 const TRACK_PROMPT_MAX_LENGTH = 500
 
 function formatLength(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+/** Same prompt, different roll of the dice: the session-unique short
+ * id keeps siblings tellable apart, on the row and on the deck. */
+function displayName(track: GeneratedTrack): string {
+  return `${track.title} #${track.id}`
+}
+
+function saveWav(track: GeneratedTrack & { state: 'ready' }) {
+  const url = URL.createObjectURL(new Blob([track.wav], { type: 'audio/wav' }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = `${displayName(track).replace(/[/\\:]/g, '-')}.wav`
+  anchor.click()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 type MediaExplorerProps = {
@@ -79,7 +107,7 @@ export function MediaExplorer({
   // keeps its own inside CrateBrowser (mounted only while visible, so
   // exactly one list answers the hardware at a time).
   const [highlight, setHighlight] = useState(0)
-  const [nextId, setNextId] = useState(0)
+  const [nextId, setNextId] = useState(1)
 
   const ready = tracks.filter(
     (track): track is GeneratedTrack & { state: 'ready' } =>
@@ -121,7 +149,7 @@ export function MediaExplorer({
         if (index < 0) return
         if (tab === 'generate') {
           const track = ready[index]
-          void loadTrackItem(intent.deck, track.wav, track.title)
+          void loadTrackItem(intent.deck, track.wav, displayName(track))
         } else {
           void loadFolderFile(intent.deck, files[index])
         }
@@ -133,20 +161,24 @@ export function MediaExplorer({
     const trimmed = prompt.trim()
     if (!trimmed) return
     const id = nextId
+    const requestEngine = engine
     setNextId(id + 1)
     setGenerateError(null)
-    setTracks((current) => [...current, { id, state: 'pending', title: trimmed }])
+    setTracks((current) => [
+      ...current,
+      { id, state: 'pending', title: trimmed, engine: requestEngine },
+    ])
     void (async () => {
       try {
         const response = await fetch(
-          engine === 'magenta' ? '/api/render' : '/api/generate',
+          requestEngine === 'magenta' ? '/api/render' : '/api/generate',
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify(
-              engine === 'magenta'
+              requestEngine === 'magenta'
                 ? { prompt: trimmed, seconds }
-                : { prompt: trimmed, seconds, kind: 'track' },
+                : { prompt: trimmed, seconds, kind: requestEngine },
             ),
           },
         )
@@ -160,7 +192,9 @@ export function MediaExplorer({
         const wav = await response.arrayBuffer()
         setTracks((current) =>
           current.map((track) =>
-            track.id === id ? { id, state: 'ready', title: trimmed, wav } : track,
+            track.id === id
+              ? { id, state: 'ready', title: trimmed, engine: requestEngine, wav }
+              : track,
           ),
         )
       } catch (error) {
@@ -196,7 +230,7 @@ export function MediaExplorer({
     }
   }
 
-  const lengths = engine === 'magenta' ? MAGENTA_LENGTHS : SA3_LENGTHS
+  const lengths = ENGINE_LENGTHS[engine]
 
   function loadButtons(onLoad: (deck: DeckId) => void, name: string) {
     return (['a', 'b'] as const).map((deck) => (
@@ -261,16 +295,17 @@ export function MediaExplorer({
             <Select
               label={t('media.generate.engine')}
               value={engine}
-              options={[
-                { value: 'track', label: t('media.generate.engineSa3') },
-                { value: 'magenta', label: t('media.generate.engineMagenta') },
-              ]}
+              options={ENGINES.map((name) => ({
+                value: name,
+                label: t(`media.generate.engines.${name}`),
+              }))}
               onChange={(value) => {
                 const next = value as TrackEngine
                 setEngine(next)
                 // Each engine has its own ceiling; snap into range.
-                const limit = next === 'magenta' ? MAGENTA_LENGTHS : SA3_LENGTHS
-                if (!limit.includes(seconds)) setSeconds(limit[1])
+                if (!ENGINE_LENGTHS[next].includes(seconds)) {
+                  setSeconds(ENGINE_LENGTHS[next][1])
+                }
               }}
             />
             <Select
@@ -301,17 +336,29 @@ export function MediaExplorer({
                 >
                   <span className="media__name">
                     {track.state === 'pending'
-                      ? t('media.generate.pending', { title: track.title })
-                      : track.title}
+                      ? t('media.generate.pending', { title: displayName(track) })
+                      : displayName(track)}
                   </span>
+                  <span className="media__meta">
+                    {t(`media.generate.engines.${track.engine}`)}
+                  </span>
+                  {track.state === 'ready' && (
+                    <Button
+                      aria-label={t('media.save', { name: displayName(track) })}
+                      onClick={() => saveWav(track)}
+                    >
+                      {t('media.saveShort')}
+                    </Button>
+                  )}
                   {track.state === 'ready' &&
                     loadButtons(
-                      (deck) => void loadTrackItem(deck, track.wav, track.title),
-                      track.title,
+                      (deck) =>
+                        void loadTrackItem(deck, track.wav, displayName(track)),
+                      displayName(track),
                     )}
                   {track.state === 'ready' && (
                     <Button
-                      aria-label={t('media.remove', { name: track.title })}
+                      aria-label={t('media.remove', { name: displayName(track) })}
                       onClick={() =>
                         setTracks((current) =>
                           current.filter((entry) => entry.id !== track.id),

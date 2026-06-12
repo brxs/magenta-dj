@@ -30,12 +30,18 @@
     "loadTo": "Load {{name}} to deck {{deck}}",
     "highlight": "Select {{name}}",
     "remove": "Remove {{name}}",
+    "save": "Save {{name}}",
+    "saveShort": "Save",
     "undecodable": "{{title}} could not be decoded",
     "generate": {
       "prompt": "Track prompt",
       "engine": "Engine",
-      "engineSa3": "Stable Audio 3 (medium)",
-      "engineMagenta": "Magenta",
+      "engines": {
+        "sfx": "SFX (SA3 small)",
+        "music": "Music (SA3 small)",
+        "track": "Track (SA3 medium)",
+        "magenta": "Magenta"
+      },
       "length": "Length",
       "action": "Compose",
       "pending": "{{title}} — composing…",

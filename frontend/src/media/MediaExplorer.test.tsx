@@ -92,15 +92,24 @@ describe('MediaExplorer', () => {
     )
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'Load late night dub techno to deck B',
+        name: 'Load late night dub techno #1 to deck B',
       }),
     )
     await act(async () => {})
+    // The short id rides along to the deck, so two takes of the same
+    // prompt stay tellable apart.
     expect(onLoadTrack).toHaveBeenCalledWith(
       'b',
       expect.any(ArrayBuffer),
-      'late night dub techno',
+      'late night dub techno #1',
     )
+    // The row names the model that produced the take (the same label
+    // also lives in the engine dropdown, hence the class filter).
+    expect(
+      screen
+        .getAllByText('Track (SA3 medium)')
+        .some((element) => element.classList.contains('media__meta')),
+    ).toBe(true)
   })
 
   it('routes Magenta tracks to the render engine within its cap', async () => {
@@ -163,8 +172,49 @@ describe('MediaExplorer', () => {
     expect(onLoadTrack).toHaveBeenCalledWith(
       'a',
       expect.any(ArrayBuffer),
-      'second',
+      'second #2',
     )
+  })
+
+  it('offers the small models too, with their shorter length menu', async () => {
+    const fetchMock = stubFetch()
+    renderExplorer()
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
+    fireEvent.change(screen.getByLabelText('Engine'), {
+      target: { value: 'sfx' },
+    })
+    fireEvent.change(screen.getByLabelText('Track prompt'), {
+      target: { value: 'vinyl spinback' },
+    })
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Compose' }))
+    })
+    // 120 s is past the small-model cap, so the length snapped down.
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/generate',
+      expect.objectContaining({
+        body: JSON.stringify({ prompt: 'vinyl spinback', seconds: 10, kind: 'sfx' }),
+      }),
+    )
+    expect(
+      screen
+        .getAllByText('SFX (SA3 small)')
+        .some((element) => element.classList.contains('media__meta')),
+    ).toBe(true)
+  })
+
+  it('saves a generated take as a WAV download', async () => {
+    stubFetch()
+    const createObjectURL = vi.fn(() => 'blob:fake')
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL: vi.fn(),
+    })
+    renderExplorer()
+    await composeTrack('keeper')
+    fireEvent.click(screen.getByRole('button', { name: 'Save keeper #1' }))
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
   })
 
   it('says so when folder browsing is unsupported', () => {

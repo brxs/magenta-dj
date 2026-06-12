@@ -104,6 +104,14 @@
   cursor: pointer;
 }
 
+.media__meta {
+  font: var(--silkscreen);
+  letter-spacing: var(--silkscreen-spacing);
+  text-transform: uppercase;
+  color: var(--color-text-silkscreen);
+  white-space: nowrap;
+}
+
 .media__empty {
   font: 400 var(--text-s) var(--font-ui);
   color: var(--color-text-muted);
