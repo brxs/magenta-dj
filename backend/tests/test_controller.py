@@ -445,10 +445,11 @@ def test_generate_returns_wav_and_strips_the_prompt(client, monkeypatch):
         generate_request(prompt="   "),
         generate_request(prompt=7),
         generate_request(prompt="x" * 501),
-        generate_request(kind="track"),
+        generate_request(kind="banger"),
         generate_request(kind=None),
         generate_request(seconds=0.1),
         generate_request(seconds=33.0),
+        generate_request(kind="track", seconds=381.0),
         generate_request(seconds=True),
         generate_request(seconds="3"),
         "not an object",
@@ -461,6 +462,23 @@ def test_generate_validates_the_trust_boundary(client, monkeypatch, body):
     monkeypatch.setattr(controller.sa3, "generate", fake_generate)
     response = client.post("/api/generate", json=body)
     assert response.status_code == 422
+
+
+def test_generate_accepts_a_track_at_track_length(client, monkeypatch):
+    # M19 (ADR-0013): 'track' runs the medium DiT with the 6:20 ceiling,
+    # while pad kinds keep the small-model 32 s bound.
+    calls = []
+
+    async def fake_generate(prompt, seconds, kind):
+        calls.append((prompt, seconds, kind))
+        return b"RIFFwav"
+
+    monkeypatch.setattr(controller.sa3, "generate", fake_generate)
+    response = client.post(
+        "/api/generate", json=generate_request(kind="track", seconds=380.0)
+    )
+    assert response.status_code == 200
+    assert calls == [("vinyl spinback", 380.0, "track")]
 
 
 def test_generate_rejects_nan_seconds(client, monkeypatch):
@@ -561,12 +579,25 @@ def test_render_respawns_a_dead_worker(client, render_worker, monkeypatch):
     assert spawned.ready_waits == 1
 
 
+def test_render_timeout_scales_with_length_above_a_floor():
+    # M19 (ADR-0013): tracks render for minutes at the measured 1.86×
+    # real time; short clips keep the flat pad deadline.
+    assert controller.render_timeout_for(2.0) == controller.RENDER_TIMEOUT_SECONDS
+    assert controller.render_timeout_for(180.0) == 360.0
+
+
+def test_render_accepts_a_track_up_to_the_cap(client, render_worker):
+    render_worker.render_response = {"pcm": b"\x00" * 8}
+    response = client.post("/api/render", json={"prompt": "x", "seconds": 180.0})
+    assert response.status_code == 200
+
+
 def test_render_timeout_kills_the_wedged_worker(client, render_worker, monkeypatch):
     # No configured response: the worker never answers — wedged. The kill
     # plus reset lets the next request respawn clean instead of burning
     # the full timeout against the same wedge (and a late answer from a
     # merely-slow worker can never land in a stranger's request).
-    monkeypatch.setattr(controller, "RENDER_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(controller, "render_timeout_for", lambda seconds: 0.05)
     response = client.post("/api/render", json={"prompt": "air horn", "seconds": 2.0})
     assert response.status_code == 502
     assert not render_worker.process.is_alive()
@@ -584,7 +615,7 @@ def test_render_fails_fast_when_handed_a_dead_worker(
         return render_worker
 
     monkeypatch.setattr(controller, "ensure_render_worker", handed_a_corpse)
-    monkeypatch.setattr(controller, "RENDER_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(controller, "render_timeout_for", lambda seconds: 0.05)
     response = client.post("/api/render", json={"prompt": "air horn", "seconds": 2.0})
     assert response.status_code == 502
     assert response.json()["detail"] == "render engine died"
@@ -608,7 +639,7 @@ def test_render_start_failure_discards_the_worker(client, render_worker):
         {"prompt": "", "seconds": 2.0},
         {"prompt": "x" * 501, "seconds": 2.0},
         {"prompt": "x", "seconds": 0.1},
-        {"prompt": "x", "seconds": 33.0},
+        {"prompt": "x", "seconds": 181.0},
         {"prompt": "x", "seconds": True},
         "not an object",
     ],

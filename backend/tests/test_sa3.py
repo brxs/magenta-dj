@@ -107,6 +107,20 @@ class TestGenerate:
         assert "--seconds 7.74" in argv
         assert "--steps 8" in argv
 
+    def test_tracks_run_the_medium_dit_with_its_decoder(self, checkout):
+        # M19 (ADR-0013): tracks pair the medium DiT with SAME-L; the
+        # pad kinds keep the small DiTs with SAME-S.
+        mlx_dir = checkout(SUCCESS_STUB)
+        asyncio.run(sa3.generate("late night dub techno", 120.0, "track"))
+        argv = (mlx_dir / ".venv" / "bin" / "argv.txt").read_text()
+        assert "--dit medium" in argv
+        assert "--decoder same-l" in argv
+        assert "--seconds 120" in argv
+
+    def test_timeout_scales_with_the_requested_length(self):
+        assert sa3.timeout_for(3.0) == sa3.TIMEOUT_SECONDS + 3.0
+        assert sa3.timeout_for(380.0) == sa3.TIMEOUT_SECONDS + 380.0
+
     def test_no_checkout_raises_unavailable(self, monkeypatch, tmp_path):
         monkeypatch.delenv("SA3_MLX_HOME", raising=False)
         monkeypatch.setattr(sa3.pathlib.Path, "home", staticmethod(lambda: tmp_path))
@@ -124,7 +138,9 @@ class TestGenerate:
             asyncio.run(sa3.generate("anything", 3.0, "sfx"))
 
     def test_timeout_kills_and_raises(self, checkout, monkeypatch):
+        # The deadline is base + seconds (timeout_for), so a short clip
+        # keeps the test fast while exercising the real kill path.
         checkout("#!/bin/sh\nsleep 30\n")
         monkeypatch.setattr(sa3, "TIMEOUT_SECONDS", 0.2)
         with pytest.raises(sa3.GenerationFailed, match="timed out"):
-            asyncio.run(sa3.generate("anything", 3.0, "sfx"))
+            asyncio.run(sa3.generate("anything", 0.5, "sfx"))

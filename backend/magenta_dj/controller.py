@@ -396,6 +396,19 @@ async def style_sample(deck_id: str, request: Request) -> dict:
 RENDER_TIMEOUT_SECONDS = 90
 # First use pays the model load; this bounds it.
 RENDER_READY_TIMEOUT_SECONDS = 180
+# Magenta track ceiling (M19, ADR-0013): at the measured 1.86× real time
+# (docs/spike-mrt2.md) a 3-minute render holds the single worker ~97 s —
+# the boundary between a visible pending state and an outage.
+RENDER_MAX_SECONDS = 180.0
+
+
+def render_timeout_for(seconds: float) -> float:
+    """Deadline for one render, scaled to the requested length.
+
+    Wall is ~0.54× the requested seconds at the measured 1.86× real time,
+    so 2× seconds keeps ~3.7× slack; the flat pad deadline stays as the
+    floor for short clips' cold-embed margin (ADR-0013)."""
+    return max(RENDER_TIMEOUT_SECONDS, seconds * 2)
 
 
 class RenderProcess:
@@ -521,11 +534,11 @@ async def render_clip(request: Request) -> Response:
         isinstance(seconds, bool)
         or not isinstance(seconds, (int, float))
         or not math.isfinite(seconds)
-        or not sa3.MIN_SECONDS <= seconds <= sa3.MAX_SECONDS
+        or not sa3.MIN_SECONDS <= seconds <= RENDER_MAX_SECONDS
     ):
         raise HTTPException(
             status_code=422,
-            detail=f"'seconds' must be {sa3.MIN_SECONDS}-{sa3.MAX_SECONDS}",
+            detail=f"'seconds' must be {sa3.MIN_SECONDS}-{RENDER_MAX_SECONDS:g}",
         )
     worker = ensure_render_worker()
     async with worker.render_lock:
@@ -558,7 +571,7 @@ async def render_clip(request: Request) -> Response:
         )
         try:
             result_id, result = await asyncio.to_thread(
-                worker.clip_queue.get, True, RENDER_TIMEOUT_SECONDS
+                worker.clip_queue.get, True, render_timeout_for(float(seconds))
             )
         except queue.Empty:
             discard_render_worker(worker)
@@ -603,16 +616,19 @@ async def generate_audio(request: Request) -> Response:
         raise HTTPException(
             status_code=422, detail=f"'kind' must be one of {sorted(sa3.KINDS)}"
         )
+    # Tracks (M19) run the medium DiT and may be minutes long; pads keep
+    # the small-model ceiling.
+    max_seconds = sa3.MAX_SECONDS_FOR[kind]
     seconds = parsed.get("seconds")
     if (
         isinstance(seconds, bool)
         or not isinstance(seconds, (int, float))
         or not math.isfinite(seconds)
-        or not sa3.MIN_SECONDS <= seconds <= sa3.MAX_SECONDS
+        or not sa3.MIN_SECONDS <= seconds <= max_seconds
     ):
         raise HTTPException(
             status_code=422,
-            detail=f"'seconds' must be {sa3.MIN_SECONDS}-{sa3.MAX_SECONDS}",
+            detail=f"'seconds' must be {sa3.MIN_SECONDS}-{max_seconds:g}",
         )
     try:
         wav = await sa3.generate(prompt, float(seconds), kind)
