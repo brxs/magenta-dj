@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 
-import { createBeatGate, createBeatTracker } from '../audio/beat'
+import { createBeatGate, createBeatTracker, trackBpm } from '../audio/beat'
 import { EQ_FLAT, type EqBand } from '../audio/eq'
 import { fxRestPosition, type FxKind } from '../audio/fx'
 import {
@@ -52,6 +52,22 @@ export type GenerateEngine = 'sfx' | 'music' | 'magenta'
  * the BPM stamp (", NNN BPM") can never push a legal prompt over the cap. */
 export const GENERATE_PROMPT_MAX_LENGTH = 500 - ', 999 BPM'.length
 
+/** A deck's source (M19, ADR-0013): the live Magenta stream, or one
+ * decoded track. Loading decides the mode — there is no toggle. */
+export type DeckMode = 'realtime' | 'playback'
+
+/** The UI's view of the loaded track; the audio itself is session-only
+ * in the channel, like every captured artefact. */
+export type TrackState = {
+  title: string
+  duration: number
+  position: number
+  playing: boolean
+  ended: boolean
+  /** The offline tracker's verdict at load — null is honest (M14). */
+  bpm: number | null
+}
+
 const EMPTY_SLOT: LoopSlot = { state: 'empty' }
 
 function withSlot(current: LoopState, slot: number, value: LoopSlot): LoopSlot[] {
@@ -100,8 +116,19 @@ export type DeckControls = {
   trim: TrimState
   setTrimDb: (db: number) => void
   enableAutoTrim: () => void
+  /** Playback mode (M19, ADR-0013): trade the live stream for one
+   * decoded track. loadTrack and leavePlayback are the only doors —
+   * loading decides the mode. */
+  mode: DeckMode
+  track: TrackState | null
+  loadTrack: (wav: ArrayBuffer, title: string) => Promise<boolean>
+  leavePlayback: () => void
+  /** Jump the track playhead (overview click / FLX4); playback-mode
+   * only, a no-op on the live stream. */
+  seekTrack: (seconds: number) => void
   /** Generating but off air (M10): buffer fills, only the cue tap hears
-   * it. play() then drops it on air without flushing what was built up. */
+   * it. play() then drops it on air without flushing what was built up.
+   * On a playback deck, CUE instead returns the track to the top. */
   primed: boolean
   prime: () => Promise<void>
   play: () => Promise<void>
@@ -153,6 +180,13 @@ export function useDeck(deckId: DeckId): DeckControls {
   const slotGenerationRef = useRef<number[]>(Array<number>(LOOP_SLOT_COUNT).fill(0))
   const [generateError, setGenerateError] = useState<string | null>(null)
   const [bpm, setBpm] = useState<number | null>(null)
+  const [mode, setModeState] = useState<DeckMode>('realtime')
+  const modeRef = useRef(mode)
+  const setMode = useCallback((next: DeckMode) => {
+    setModeState(next)
+    modeRef.current = next
+  }, [])
+  const [track, setTrack] = useState<TrackState | null>(null)
   // Tracker + gate per deck (M14), and the loudness tracker behind
   // auto-gain (M17) — all reset on stream discontinuities so an
   // estimate never spans two unrelated streams (the reset rule the
@@ -238,6 +272,9 @@ export function useDeck(deckId: DeckId): DeckControls {
       socket.onopen = () => dispatch({ type: 'socket_open' })
       socket.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
+          // A parked deck (playback mode) drops stragglers: a chunk the
+          // worker flushed late must not pollute the track's clock.
+          if (modeRef.current === 'playback') return
           const samples = new Float32Array(event.data)
           // Beat and loudness tracking read first — postPcm transfers
           // the buffer away. (The feed runs ahead of the speakers by
@@ -288,6 +325,10 @@ export function useDeck(deckId: DeckId): DeckControls {
   // target, held when the tracker has nothing trustworthy.
   useEffect(() => {
     const timer = setInterval(() => {
+      // A playback deck holds its load-time analysis: the stream
+      // trackers are empty and a tick would only blank the track's
+      // clock (ADR-0013).
+      if (modeRef.current === 'playback') return
       const displayed = beat.gate.push(beat.tracker.estimate())
       setBpm(displayed)
       channelRef.current?.setBeatPeriod(
@@ -311,6 +352,20 @@ export function useDeck(deckId: DeckId): DeckControls {
   }, [])
 
   const play = useCallback(async () => {
+    // A playback deck's PLAY drives the track, not the worker.
+    if (modeRef.current === 'playback') {
+      try {
+        await engine.resume()
+      } catch (error) {
+        dispatch({
+          type: 'local_error',
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return
+      }
+      channelRef.current?.playTrack()
+      return
+    }
     // Dropping a primed deck on air: the worker already streams and the
     // buffer holds the prepped audio — unmute, don't flush or replay.
     if (primedRef.current) {
@@ -341,6 +396,13 @@ export function useDeck(deckId: DeckId): DeckControls {
   /** Start generating off air: like play(), but muted on the master so
    * the prep is only audible over the cue tap (M10 transport CUE). */
   const prime = useCallback(async () => {
+    // Transport CUE on a track deck: return to the top, parked — the
+    // deck-prep semantics, adapted (ADR-0013).
+    if (modeRef.current === 'playback') {
+      channelRef.current?.pauseTrack()
+      channelRef.current?.seekTrack(0)
+      return
+    }
     if (primedRef.current) return
     try {
       const channel = await ensureChannel()
@@ -361,6 +423,18 @@ export function useDeck(deckId: DeckId): DeckControls {
   }, [ensureChannel, engine, send, setPrimed, resetStreamMeasurements])
 
   const stop = useCallback(() => {
+    // A playback deck's STOP pauses the track; running pads stop with
+    // it, exactly as on the live deck.
+    if (modeRef.current === 'playback') {
+      channelRef.current?.pauseTrack()
+      loopGestureRef.current += 1
+      channelRef.current?.stopLoop()
+      channelRef.current?.stopOneShot()
+      if (loopRef.current.active !== null) {
+        setLoop({ ...loopRef.current, active: null })
+      }
+      return
+    }
     send({ type: 'stop' })
     // Flush instead of letting the buffered seconds play out, so stop is
     // immediate like a DJ expects. The empty channel goes back on air so
@@ -387,6 +461,87 @@ export function useDeck(deckId: DeckId): DeckControls {
     },
     [send],
   )
+
+  const loadTrack = useCallback(
+    async (wav: ArrayBuffer, title: string) => {
+      let channel: DeckChannel
+      try {
+        channel = await ensureChannel()
+        await engine.resume()
+      } catch (error) {
+        dispatch({
+          type: 'local_error',
+          error: error instanceof Error ? error.message : String(error),
+        })
+        return false
+      }
+      const decoded = await channel.loadTrack(wav)
+      if (!decoded) return false
+      // Park whatever was running — the live stream's worker idles
+      // warm, a previous track pauses — exactly like STOP (ADR-0013).
+      stop()
+      // The decoded buffer clears the same honesty bar as the stream,
+      // offline; the synced echo takes its clock from the verdict.
+      const trackTempo = trackBpm(decoded.left, decoded.right, decoded.sampleRate)
+      channel.setBeatPeriod(trackTempo === null ? null : 60 / trackTempo)
+      setMode('playback')
+      setTrack({
+        title,
+        duration: decoded.duration,
+        position: 0,
+        playing: false,
+        ended: false,
+        bpm: trackTempo,
+      })
+      return true
+    },
+    [ensureChannel, engine, stop, setMode],
+  )
+
+  const leavePlayback = useCallback(() => {
+    if (modeRef.current !== 'playback') return
+    channelRef.current?.unloadTrack()
+    setMode('realtime')
+    setTrack(null)
+    // The stream returns by a normal play; measurements start over.
+    resetStreamMeasurements()
+  }, [setMode, resetStreamMeasurements])
+
+  const seekTrack = useCallback((seconds: number) => {
+    if (modeRef.current !== 'playback') return
+    channelRef.current?.seekTrack(seconds)
+    const status = channelRef.current?.getTrackStatus()
+    if (!status) return
+    setTrack(
+      (current) =>
+        current && {
+          ...current,
+          position: status.position,
+          playing: status.playing,
+          ended: status.ended,
+        },
+    )
+  }, [])
+
+  // The playhead readout follows the channel while a track is loaded —
+  // the graph is the source of truth (the LevelMeter pattern).
+  useEffect(() => {
+    if (mode !== 'playback') return
+    const timer = setInterval(() => {
+      const status = channelRef.current?.getTrackStatus()
+      if (!status) return
+      setTrack(
+        (current) =>
+          current && {
+            ...current,
+            position: status.position,
+            playing: status.playing,
+            ended: status.ended,
+          },
+      )
+    }, 250)
+    return () => clearInterval(timer)
+  }, [mode])
 
   const setModel = useCallback(
     (model: string) => {
@@ -420,7 +575,14 @@ export function useDeck(deckId: DeckId): DeckControls {
   )
 
   const captureStyleSample = useCallback(
-    () => channelRef.current?.captureSample(STYLE_SAMPLE_SECONDS) ?? Promise.resolve(null),
+    () =>
+      // The worklet history holds the dead stream in playback mode;
+      // sampling a track will slice the buffer instead — deferred past
+      // M19 (ADR-0013).
+      modeRef.current === 'playback'
+        ? Promise.resolve(null)
+        : (channelRef.current?.captureSample(STYLE_SAMPLE_SECONDS) ??
+          Promise.resolve(null)),
     [],
   )
 
@@ -486,6 +648,10 @@ export function useDeck(deckId: DeckId): DeckControls {
         if (!slotState.oneShot) setLoop({ ...current, active: slot })
         return
       }
+      // In playback mode the worklet's history holds the dead stream —
+      // a capture would loop garbage. Buffer slicing is deferred past
+      // M19; until then an empty pad refuses the press (ADR-0013).
+      if (modeRef.current === 'playback') return
       // One gesture: capture the just-played tail AND freeze onto it.
       // The press is refused (no state change) when too little has
       // played to loop (ADR-0009). A gated tempo snaps the length to
@@ -668,6 +834,11 @@ export function useDeck(deckId: DeckId): DeckControls {
     generateError,
     bpm,
     captureStyleSample,
+    mode,
+    track,
+    loadTrack,
+    leavePlayback,
+    seekTrack,
     trim,
     setTrimDb,
     enableAutoTrim,

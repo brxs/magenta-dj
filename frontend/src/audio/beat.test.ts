@@ -4,6 +4,7 @@ import {
   createBeatGate,
   createBeatTracker,
   GATE_MIN_CONFIDENCE,
+  trackBpm,
   type BeatEstimate,
 } from './beat'
 import { clickTrack as sharedClickTrack, noiseSource } from '../test/clickTrack'
@@ -184,5 +185,42 @@ describe('createBeatGate', () => {
     expect(gate.push(null)).toBe(128)
     expect(gate.push(null)).toBeNull()
     expect(gate.current()).toBeNull()
+  })
+})
+
+describe('trackBpm', () => {
+  function deinterleave(samples: Float32Array): [Float32Array, Float32Array] {
+    const frames = samples.length / 2
+    const left = new Float32Array(frames)
+    const right = new Float32Array(frames)
+    for (let i = 0; i < frames; i++) {
+      left[i] = samples[2 * i]
+      right[i] = samples[2 * i + 1]
+    }
+    return [left, right]
+  }
+
+  it('finds the tempo of a decoded track offline', () => {
+    const [left, right] = deinterleave(clickTrack(128, 24))
+    const bpm = trackBpm(left, right, SAMPLE_RATE)
+    expect(bpm).not.toBeNull()
+    expect(Math.abs(bpm! - 128)).toBeLessThanOrEqual(128 * 0.05)
+  })
+
+  it('stays honest on a beatless track', () => {
+    const silence = new Float32Array(SAMPLE_RATE * 15)
+    expect(trackBpm(silence, silence, SAMPLE_RATE)).toBeNull()
+  })
+
+  it('keeps the body reading when the outro goes beatless', () => {
+    const [left, right] = deinterleave(clickTrack(128, 24))
+    const tailFrames = SAMPLE_RATE * 8
+    const paddedLeft = new Float32Array(left.length + tailFrames)
+    const paddedRight = new Float32Array(right.length + tailFrames)
+    paddedLeft.set(left)
+    paddedRight.set(right)
+    const bpm = trackBpm(paddedLeft, paddedRight, SAMPLE_RATE)
+    expect(bpm).not.toBeNull()
+    expect(Math.abs(bpm! - 128)).toBeLessThanOrEqual(128 * 0.05)
   })
 })

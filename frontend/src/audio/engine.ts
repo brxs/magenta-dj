@@ -90,9 +90,15 @@ export type DeckChannel = {
    * or null when too little has played to embed meaningfully. */
   captureSample: (seconds: number) => Promise<Float32Array<ArrayBuffer> | null>
   /** Playback mode (M19, ADR-0013): decode a whole track into the
-   * channel. Resolves to its duration in seconds, or null when the
-   * body doesn't decode. Replaces any previously loaded track. */
-  loadTrack: (wav: ArrayBuffer) => Promise<number | null>
+   * channel. Resolves to its duration plus live views of the decoded
+   * channels (for the offline BPM pass — no second decode), or null
+   * when the body doesn't decode. Replaces any previous track. */
+  loadTrack: (wav: ArrayBuffer) => Promise<{
+    duration: number
+    sampleRate: number
+    left: Float32Array
+    right: Float32Array
+  } | null>
   /** Start (or resume) the track; from the ended state it restarts at
    * the top. False with no track loaded. */
   playTrack: () => boolean
@@ -714,7 +720,12 @@ export function createAudioEngine(): AudioEngine {
           stopTrackSource()
           trackBuffer = decoded
           trackTransport = { state: 'paused', offset: 0 }
-          return decoded.duration
+          return {
+            duration: decoded.duration,
+            sampleRate: decoded.sampleRate,
+            left: channelData(decoded, 0),
+            right: channelData(decoded, 1),
+          }
         },
         playTrack() {
           if (!trackBuffer) return false

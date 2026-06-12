@@ -287,3 +287,32 @@ export function createBeatGate(): BeatGate {
     },
   }
 }
+
+/** Offline pass for a decoded track (M19, ADR-0013): stream the buffer
+ * through a fresh tracker and gate at the live cadence — one estimate
+ * per simulated second — so a track clears the same honesty bar as the
+ * stream, just faster than real time. One number per track: a piece
+ * that drifts mid-way keeps its last stable reading (the body is what
+ * gets mixed, not the outro). */
+export function trackBpm(
+  left: Float32Array,
+  right: Float32Array,
+  sampleRate: number,
+): number | null {
+  const tracker = createBeatTracker(sampleRate)
+  const gate = createBeatGate()
+  let lastStable: number | null = null
+  const chunkFrames = sampleRate // one second per push, the wire cadence
+  for (let start = 0; start < left.length; start += chunkFrames) {
+    const end = Math.min(start + chunkFrames, left.length)
+    const interleaved = new Float32Array((end - start) * 2)
+    for (let frame = start; frame < end; frame++) {
+      interleaved[2 * (frame - start)] = left[frame]
+      interleaved[2 * (frame - start) + 1] = right[frame]
+    }
+    tracker.push(interleaved)
+    const gated = gate.push(tracker.estimate())
+    if (gated !== null) lastStable = gated
+  }
+  return lastStable
+}
