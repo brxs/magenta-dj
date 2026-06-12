@@ -280,3 +280,24 @@ describe('MediaExplorer', () => {
     expect(onLoadTrack).toHaveBeenCalledWith('a', wav, 'a-side.mp3')
   })
 })
+
+describe('rotary inside the folded-in crates tab', () => {
+  const preset = (name: string): StylePreset => ({
+    name,
+    targets: [{ x: 0.5, y: 0.5, text: 'funk' }],
+    cursor: { x: 0.5, y: 0.5 },
+    fx: { kind: null, amount: 0 },
+  })
+
+  it('scrolls the crate highlight and quick-loads it', () => {
+    const bus = createControlBus()
+    const onLoadPreset = vi.fn()
+    renderExplorer({ onLoadPreset }, [preset('one'), preset('two')], bus)
+    act(() => bus.publish({ kind: 'browse_scroll', steps: 1 }))
+    expect(
+      screen.getByRole('button', { name: 'Select preset two' }),
+    ).toHaveAttribute('aria-current', 'true')
+    act(() => bus.publish({ kind: 'browse_load', deck: 'a' }))
+    expect(onLoadPreset).toHaveBeenCalledWith('a', preset('two'))
+  })
+})
