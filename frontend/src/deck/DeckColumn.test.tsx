@@ -26,6 +26,7 @@ function renderPanel(
   loop: LoopState = emptyLoop(),
   bpm: number | null = null,
   canSample = true,
+  generateError: string | null = null,
 ) {
   return render(
     <ControlBusProvider bus={bus}>
@@ -50,6 +51,11 @@ function renderPanel(
         onSetLoopSeconds={
           (handlers.onSetLoopSeconds as (seconds: number) => void) ?? noop
         }
+        onGenerateToPad={
+          (handlers.onGenerateToPad as (prompt: string, kind: string) => void) ??
+          noop
+        }
+        generateError={generateError}
         bpm={bpm}
         onSampleOtherDeck={
           (handlers.onSampleOtherDeck as () => Promise<{
@@ -257,6 +263,8 @@ describe('DeckColumn', () => {
           onSetFx={noop as (k: unknown) => void}
           onSetFxAmount={noop as (v: number) => void}
           loop={emptyLoop()}
+          onGenerateToPad={noop as (prompt: string, kind: string) => void}
+          generateError={null}
           onLoopPad={noop as (slot: number) => void}
           onClearLoopPad={noop as (slot: number) => void}
           onSetLoopSeconds={noop as (seconds: number) => void}
@@ -718,6 +726,8 @@ describe('DeckColumn', () => {
             onSetFx={noop as (k: unknown) => void}
             onSetFxAmount={noop as (v: number) => void}
             loop={emptyLoop()}
+            onGenerateToPad={noop as (prompt: string, kind: string) => void}
+            generateError={null}
             onLoopPad={noop as (slot: number) => void}
             onClearLoopPad={noop as (slot: number) => void}
             onSetLoopSeconds={noop as (seconds: number) => void}
@@ -818,6 +828,8 @@ describe('DeckColumn', () => {
           onSetFx={noop as (k: unknown) => void}
           onSetFxAmount={noop as (v: number) => void}
           loop={emptyLoop()}
+          onGenerateToPad={noop as (prompt: string, kind: string) => void}
+          generateError={null}
           onLoopPad={noop as (slot: number) => void}
           onClearLoopPad={noop as (slot: number) => void}
           onSetLoopSeconds={noop as (seconds: number) => void}
@@ -987,6 +999,100 @@ describe('DeckColumn', () => {
     expect(
       screen.getByRole('button', { name: 'Loop slot 1' }),
     ).toBeDisabled()
+  })
+
+  function generateRow(
+    handlers: Record<string, () => void> = {},
+    loop: LoopState = emptyLoop(),
+    generateError: string | null = null,
+  ) {
+    renderPanel(
+      { connection: 'open' },
+      handlers,
+      createControlBus(),
+      { kind: null, amount: 0 },
+      loop,
+      null,
+      true,
+      generateError,
+    )
+  }
+
+  it('generates to a pad with the typed prompt and selected kind', () => {
+    const onGenerateToPad = vi.fn()
+    generateRow({ onGenerateToPad: onGenerateToPad as () => void })
+
+    fireEvent.change(screen.getByLabelText('Generate prompt'), {
+      target: { value: 'vinyl spinback' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Generate' }))
+    expect(onGenerateToPad).toHaveBeenCalledWith('vinyl spinback', 'sfx')
+
+    fireEvent.change(screen.getByLabelText('Type'), {
+      target: { value: 'loop' },
+    })
+    fireEvent.keyDown(screen.getByLabelText('Generate prompt'), {
+      key: 'Enter',
+    })
+    expect(onGenerateToPad).toHaveBeenLastCalledWith('vinyl spinback', 'loop')
+  })
+
+  it('refuses to generate without a prompt or an empty slot', () => {
+    const fullSlots: LoopState = {
+      ...emptyLoop(),
+      slots: Array.from({ length: 4 }, () => ({
+        state: 'filled',
+        label: null,
+        oneShot: false,
+      })),
+    }
+    generateRow({}, fullSlots)
+    fireEvent.change(screen.getByLabelText('Generate prompt'), {
+      target: { value: 'riser' },
+    })
+    expect(screen.getByRole('button', { name: 'Generate' })).toBeDisabled()
+  })
+
+  it('shows a pending slot as busy and unpressable', () => {
+    const pending: LoopState = {
+      ...emptyLoop(),
+      slots: [
+        { state: 'pending', label: 'air horn', oneShot: true },
+        { state: 'empty' },
+        { state: 'empty' },
+        { state: 'empty' },
+      ],
+    }
+    generateRow({}, pending)
+    const pad = screen.getByRole('button', {
+      name: 'Loop slot 1 — generating',
+    })
+    expect(pad).toBeDisabled()
+    expect(pad).toHaveTextContent('…')
+  })
+
+  it('labels a generated slot with its prompt', () => {
+    const generated: LoopState = {
+      ...emptyLoop(),
+      slots: [
+        { state: 'filled', label: 'air horn', oneShot: true },
+        { state: 'empty' },
+        { state: 'empty' },
+        { state: 'empty' },
+      ],
+    }
+    generateRow({}, generated)
+    expect(screen.getByRole('button', { name: 'Loop slot 1' })).toHaveAttribute(
+      'title',
+      'air horn',
+    )
+  })
+
+  it('surfaces the generation failure detail', () => {
+    generateRow({}, emptyLoop(), 'sa3_mlx checkout not found')
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Generation failed: sa3_mlx checkout not found',
+    )
   })
 
   it('shows the gated BPM, and an honest dash without one', () => {

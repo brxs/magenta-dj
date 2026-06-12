@@ -819,4 +819,17 @@ describe('useDeck generated pads', () => {
     act(() => result.current.stop())
     expect(channel.stopOneShot).toHaveBeenCalled()
   })
+
+  it('creates the channel on demand: pads fill before the deck plays', async () => {
+    stubFetchOk()
+    const { engine, channel } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+
+    act(() => result.current.generateToPad('air horn', 'sfx'))
+    await act(async () => {})
+    expect(engine.createDeckChannel).toHaveBeenCalled()
+    expect(channel.loadGeneratedLoop).toHaveBeenCalled()
+    expect(result.current.loop.slots[0].state).toBe('filled')
+  })
 })

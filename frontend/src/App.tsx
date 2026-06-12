@@ -354,6 +354,8 @@ function App() {
           onLoopPad={deckA.toggleLoopPad}
           onClearLoopPad={deckA.clearLoopPad}
           onSetLoopSeconds={deckA.setLoopSeconds}
+          onGenerateToPad={deckA.generateToPad}
+          generateError={deckA.generateError}
           bpm={deckA.bpm}
           onSampleOtherDeck={handleSampleForA}
           canSample={deckB.state.playing}
@@ -394,6 +396,8 @@ function App() {
           onLoopPad={deckB.toggleLoopPad}
           onClearLoopPad={deckB.clearLoopPad}
           onSetLoopSeconds={deckB.setLoopSeconds}
+          onGenerateToPad={deckB.generateToPad}
+          generateError={deckB.generateError}
           bpm={deckB.bpm}
           onSampleOtherDeck={handleSampleForB}
           canSample={deckA.state.playing}

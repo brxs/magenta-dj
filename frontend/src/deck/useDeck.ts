@@ -530,9 +530,8 @@ export function useDeck(deckId: DeckId): DeckControls {
 
   const generateToPad = useCallback(
     (prompt: string, kind: 'sfx' | 'loop') => {
-      const channel = channelRef.current
       const trimmed = prompt.trim()
-      if (!channel || !trimmed) return
+      if (!trimmed) return
       const current = loopRef.current
       const slot = current.slots.findIndex((entry) => entry.state === 'empty')
       if (slot === -1) return
@@ -560,20 +559,23 @@ export function useDeck(deckId: DeckId): DeckControls {
           oneShot,
         }),
       })
-      const stale = () =>
-        channelRef.current !== channel ||
-        slotGenerationRef.current[slot] !== generation
+      const stale = () => slotGenerationRef.current[slot] !== generation
       void (async () => {
         try {
-          const response = await fetch('/api/generate', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              prompt: requestPrompt,
-              seconds: requestSeconds,
-              kind: oneShot ? 'sfx' : 'music',
+          // The channel is created on demand: pads can fill before the
+          // deck has ever played (prepping weapons before the set).
+          const [channel, response] = await Promise.all([
+            ensureChannel(),
+            fetch('/api/generate', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                prompt: requestPrompt,
+                seconds: requestSeconds,
+                kind: oneShot ? 'sfx' : 'music',
+              }),
             }),
-          })
+          ])
           if (!response.ok) {
             // The backend's detail names the problem (502/503 carry the
             // CLI tail or the setup hint).
@@ -606,7 +608,7 @@ export function useDeck(deckId: DeckId): DeckControls {
         }
       })()
     },
-    [setLoop, beat],
+    [setLoop, beat, ensureChannel],
   )
 
   const setLoopSeconds = useCallback(

@@ -99,8 +99,18 @@
     "loop": {
       "title": "Freeze loops",
       "slot": "Loop slot {{n}}",
+      "slotPending": "Loop slot {{n}} — generating",
       "length": "Loop length",
       "lengthOption": "{{seconds}} s"
+    },
+    "generate": {
+      "title": "Generate to pad",
+      "prompt": "Generate prompt",
+      "kind": "Type",
+      "kindSfx": "SFX",
+      "kindLoop": "Loop",
+      "action": "Generate",
+      "failed": "Generation failed: {{message}}"
     },
     "play": "Play",
     "stop": "Stop",
