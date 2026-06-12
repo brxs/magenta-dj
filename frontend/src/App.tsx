@@ -376,6 +376,7 @@ function App() {
           onSavePreset={handleSavePreset}
           mode={deckA.mode}
           track={deckA.track}
+          onLeavePlayback={deckA.leavePlayback}
           onSeekTrack={deckA.seekTrack}
           getTrackPeaks={deckA.getTrackPeaks}
         />
@@ -416,6 +417,7 @@ function App() {
           onSavePreset={handleSavePreset}
           mode={deckB.mode}
           track={deckB.track}
+          onLeavePlayback={deckB.leavePlayback}
           onSeekTrack={deckB.seekTrack}
           getTrackPeaks={deckB.getTrackPeaks}
         />

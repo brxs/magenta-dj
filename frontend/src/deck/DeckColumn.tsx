@@ -117,6 +117,9 @@ type DeckColumnProps = {
    * for the loaded track's overview and the transport drives it. */
   mode: DeckMode
   track: TrackState | null
+  /** The deck-local exit from playback — back to the live stream
+   * without a trip to the Media Explorer. */
+  onLeavePlayback: () => void
   onSeekTrack: (seconds: number) => void
   getTrackPeaks: (
     buckets: number,
@@ -149,6 +152,7 @@ export function DeckColumn({
   onSavePreset,
   mode,
   track,
+  onLeavePlayback,
   onSeekTrack,
   getTrackPeaks,
 }: DeckColumnProps) {
@@ -527,7 +531,12 @@ export function DeckColumn({
             accent={deckId}
             onSeek={onSeekTrack}
           />
-          <p className="deck__active-prompt">{track.title}</p>
+          <div className="deck__track-row">
+            <p className="deck__active-prompt">{track.title}</p>
+            <Button onClick={onLeavePlayback}>
+              {t('deck.track.backToLive')}
+            </Button>
+          </div>
         </Panel>
       ) : (
       <Panel className="deck__style">

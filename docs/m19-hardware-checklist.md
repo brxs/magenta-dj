@@ -62,6 +62,8 @@ half no script can tick (ADR-0013).
       as in M16).
 - [ ] The "Live stream → B" button returns deck B to its style pad;
       PLAY streams again without a reload.
+- [ ] The deck's own "Back to live" button (next to the track title)
+      does the same — the exit that works with zero saved crates.
 
 ## Hands-off run (the exit criterion)
 

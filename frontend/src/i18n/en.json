@@ -168,7 +168,8 @@
     "track": {
       "title": "Track",
       "overview": "Track overview {{id}}",
-      "time": "{{position}} / {{duration}}"
+      "time": "{{position}} / {{duration}}",
+      "backToLive": "Back to live"
     },
     "health": {
       "buffer": "Buffer",

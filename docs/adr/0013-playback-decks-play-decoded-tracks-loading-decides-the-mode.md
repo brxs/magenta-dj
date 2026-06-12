@@ -54,8 +54,12 @@ Realtime deck holding a stale buffer).
   browser (session-only pick — no new storage layer for a directory
   handle). Loading a crate puts the deck in `realtime`; loading a
   track puts it in `playback`. So that playback always has an exit,
-  each deck's live stream is itself a loadable item — returning to
-  `realtime` is also a load, never a toggle. The FLX4 rotary scrolls
+  each deck's live stream is itself a loadable item — and the playback
+  deck carries its own "Back to live" control, the same exit within
+  reach of the deck (a user with no saved crates must never depend on
+  finding the explorer's live row). Returning to `realtime` is a load
+  or that explicit exit, never a free-floating mode toggle. The FLX4
+  rotary scrolls
   the *visible* tab's list and LOAD loads the highlighted item,
   whatever its type; "unified" means type-aware loading, not a hidden
   cross-tab list, and the measured byte map is untouched.

@@ -73,6 +73,7 @@ function renderPanel(
         }
         mode={playback.mode}
         track={playback.track}
+        onLeavePlayback={handlers.onLeavePlayback ?? noop}
         onSeekTrack={(handlers.onSeekTrack as (s: number) => void) ?? noop}
         getTrackPeaks={() => null}
       />
@@ -282,6 +283,7 @@ describe('DeckColumn', () => {
           onSavePreset={noop as (preset: object) => void}
           mode="realtime"
           track={null}
+          onLeavePlayback={noop}
           onSeekTrack={noop as (s: number) => void}
           getTrackPeaks={() => null}
         />
@@ -749,6 +751,7 @@ describe('DeckColumn', () => {
             onSavePreset={noop as (preset: object) => void}
             mode="realtime"
             track={null}
+            onLeavePlayback={noop}
             onSeekTrack={noop as (s: number) => void}
             getTrackPeaks={() => null}
           />
@@ -855,6 +858,7 @@ describe('DeckColumn', () => {
           onSavePreset={noop as (preset: object) => void}
           mode="realtime"
           track={null}
+          onLeavePlayback={noop}
           onSeekTrack={noop as (s: number) => void}
           getTrackPeaks={() => null}
         />
@@ -1252,5 +1256,14 @@ describe('DeckColumn playback mode (M19)', () => {
   it('announces the explicit end-of-track state', () => {
     renderPlayback(aTrack({ position: 125, ended: true }))
     expect(screen.getByText('Track — ended')).toBeInTheDocument()
+  })
+
+  it('carries its own exit back to the live stream', () => {
+    // Without crates the Media Explorer's live row is the only other
+    // way out — the deck must not depend on it.
+    const onLeavePlayback = vi.fn()
+    renderPlayback(aTrack(), { onLeavePlayback })
+    fireEvent.click(screen.getByRole('button', { name: 'Back to live' }))
+    expect(onLeavePlayback).toHaveBeenCalled()
   })
 })
