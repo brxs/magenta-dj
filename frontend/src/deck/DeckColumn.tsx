@@ -691,39 +691,43 @@ export function DeckColumn({
         role="group"
         aria-label={t('deck.generate.title')}
       >
-        <div className="deck__generate-prompt">
-          <TextField
-            label={t('deck.generate.prompt')}
-            value={generateDraft}
-            disabled={!connected}
-            onChange={(event) => setGenerateDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') fireGenerate()
-            }}
+        <div className="deck__generate-options">
+          <Select
+            label={t('deck.generate.engine')}
+            value={generateEngine}
+            options={[
+              { value: 'sfx', label: t('deck.generate.engineSfx') },
+              { value: 'music', label: t('deck.generate.engineMusic') },
+              { value: 'magenta', label: t('deck.generate.engineMagenta') },
+            ]}
+            onChange={(value) => setGenerateEngine(value as GenerateEngine)}
+          />
+          <Select
+            label={t('deck.generate.kind')}
+            value={generateOneShot ? 'oneshot' : 'loop'}
+            options={[
+              { value: 'oneshot', label: t('deck.generate.kindOneShot') },
+              { value: 'loop', label: t('deck.generate.kindLoop') },
+            ]}
+            onChange={(value) => setGenerateOneShot(value === 'oneshot')}
           />
         </div>
-        <Select
-          label={t('deck.generate.engine')}
-          value={generateEngine}
-          options={[
-            { value: 'sfx', label: t('deck.generate.engineSfx') },
-            { value: 'music', label: t('deck.generate.engineMusic') },
-            { value: 'magenta', label: t('deck.generate.engineMagenta') },
-          ]}
-          onChange={(value) => setGenerateEngine(value as GenerateEngine)}
-        />
-        <Select
-          label={t('deck.generate.kind')}
-          value={generateOneShot ? 'oneshot' : 'loop'}
-          options={[
-            { value: 'oneshot', label: t('deck.generate.kindOneShot') },
-            { value: 'loop', label: t('deck.generate.kindLoop') },
-          ]}
-          onChange={(value) => setGenerateOneShot(value === 'oneshot')}
-        />
-        <Button disabled={!canGenerate} onClick={fireGenerate}>
-          {t('deck.generate.action')}
-        </Button>
+        <div className="deck__generate-row">
+          <div className="deck__generate-prompt">
+            <TextField
+              label={t('deck.generate.prompt')}
+              value={generateDraft}
+              disabled={!connected}
+              onChange={(event) => setGenerateDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') fireGenerate()
+              }}
+            />
+          </div>
+          <Button disabled={!canGenerate} onClick={fireGenerate}>
+            {t('deck.generate.action')}
+          </Button>
+        </div>
       </div>
       {generateError && (
         <p className="deck__error" role="alert">
