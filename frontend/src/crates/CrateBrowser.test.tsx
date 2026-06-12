@@ -70,28 +70,28 @@ describe('CrateBrowser', () => {
       screen.getByRole('button', { name: 'Select preset Warm funk' }),
     ).toHaveAttribute('aria-current', 'true')
 
-    act(() => bus.publish({ kind: 'crate_scroll', steps: 1 }))
+    act(() => bus.publish({ kind: 'browse_scroll', steps: 1 }))
     expect(
       screen.getByRole('button', { name: 'Select preset Dub session' }),
     ).toHaveAttribute('aria-current', 'true')
     // The end of the list clamps rather than wrapping.
-    act(() => bus.publish({ kind: 'crate_scroll', steps: 1 }))
+    act(() => bus.publish({ kind: 'browse_scroll', steps: 1 }))
     expect(
       screen.getByRole('button', { name: 'Select preset Dub session' }),
     ).toHaveAttribute('aria-current', 'true')
 
-    act(() => bus.publish({ kind: 'crate_load', deck: 'a' }))
+    act(() => bus.publish({ kind: 'browse_load', deck: 'a' }))
     expect(onLoad).toHaveBeenCalledWith('a', DUB)
   })
 
   it('a fast multi-click tick moves the highlight by its magnitude', () => {
     const bus = createControlBus()
     renderBrowser([FUNK, DUB, { ...FUNK, name: 'Third' }], {}, bus)
-    act(() => bus.publish({ kind: 'crate_scroll', steps: 2 }))
+    act(() => bus.publish({ kind: 'browse_scroll', steps: 2 }))
     expect(
       screen.getByRole('button', { name: 'Select preset Third' }),
     ).toHaveAttribute('aria-current', 'true')
-    act(() => bus.publish({ kind: 'crate_scroll', steps: -2 }))
+    act(() => bus.publish({ kind: 'browse_scroll', steps: -2 }))
     expect(
       screen.getByRole('button', { name: 'Select preset Warm funk' }),
     ).toHaveAttribute('aria-current', 'true')
@@ -101,8 +101,8 @@ describe('CrateBrowser', () => {
     const onLoad = vi.fn()
     const bus = createControlBus()
     renderBrowser([], { onLoad }, bus)
-    act(() => bus.publish({ kind: 'crate_scroll', steps: 1 }))
-    act(() => bus.publish({ kind: 'crate_load', deck: 'a' }))
+    act(() => bus.publish({ kind: 'browse_scroll', steps: 1 }))
+    act(() => bus.publish({ kind: 'browse_load', deck: 'a' }))
     expect(onLoad).not.toHaveBeenCalled()
   })
 
@@ -114,13 +114,13 @@ describe('CrateBrowser', () => {
         <CrateBrowser presets={[FUNK, DUB]} onLoad={onLoad} onDelete={vi.fn()} onImport={vi.fn()} />
       </ControlBusProvider>,
     )
-    act(() => bus.publish({ kind: 'crate_scroll', steps: 1 })) // → DUB
+    act(() => bus.publish({ kind: 'browse_scroll', steps: 1 })) // → DUB
     rerender(
       <ControlBusProvider bus={bus}>
         <CrateBrowser presets={[FUNK]} onLoad={onLoad} onDelete={vi.fn()} onImport={vi.fn()} />
       </ControlBusProvider>,
     )
-    act(() => bus.publish({ kind: 'crate_load', deck: 'b' }))
+    act(() => bus.publish({ kind: 'browse_load', deck: 'b' }))
     expect(onLoad).toHaveBeenCalledWith('b', FUNK)
   })
 

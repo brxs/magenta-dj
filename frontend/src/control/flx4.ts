@@ -169,7 +169,7 @@ function buttonIntent(
   }
   const loadDeck = LOAD_NOTE_DECK[note]
   if (status === LOAD_STATUS && loadDeck) {
-    return { kind: 'crate_load', deck: loadDeck }
+    return { kind: 'browse_load', deck: loadDeck }
   }
   return null
 }
@@ -198,7 +198,7 @@ export function createFlx4Translator(): Flx4Translator {
     if (status === MIXER_STATUS && number === BROWSE_CC) {
       if (value === 0 || value === 0x40) return null
       return {
-        kind: 'crate_scroll',
+        kind: 'browse_scroll',
         steps: value < 0x40 ? value : value - 0x80,
       }
     }

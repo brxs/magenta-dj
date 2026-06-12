@@ -18,6 +18,36 @@
       "empty": "monitoring…"
     }
   },
+  "media": {
+    "title": "Media explorer",
+    "tabs": {
+      "crates": "Crates",
+      "generate": "Generate",
+      "folder": "Folder"
+    },
+    "live": "Live stream",
+    "loadShort": "→ {{deck}}",
+    "loadTo": "Load {{name}} to deck {{deck}}",
+    "highlight": "Select {{name}}",
+    "remove": "Remove {{name}}",
+    "undecodable": "{{title}} could not be decoded",
+    "generate": {
+      "prompt": "Track prompt",
+      "engine": "Engine",
+      "engineSa3": "Stable Audio 3 (medium)",
+      "engineMagenta": "Magenta",
+      "length": "Length",
+      "action": "Compose",
+      "pending": "{{title}} — composing…",
+      "failed": "Track generation failed: {{message}}",
+      "empty": "No tracks yet — compose one from a prompt."
+    },
+    "folder": {
+      "choose": "Choose folder",
+      "unsupported": "Folder browsing needs Chromium's File System Access API",
+      "empty": "No audio files in {{name}}"
+    }
+  },
   "crates": {
     "title": "Crates",
     "empty": "No presets yet — save a deck's style below its pad",

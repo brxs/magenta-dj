@@ -52,13 +52,13 @@ export function CrateBrowser({ presets, onLoad, onDelete, onImport }: CrateBrows
   const bus = useControlBus()
   useEffect(() =>
     bus.subscribe((intent) => {
-      if (intent.kind === 'crate_scroll') {
+      if (intent.kind === 'browse_scroll') {
         if (presets.length === 0) return
         setIndex((current) => {
           const from = Math.min(current, presets.length - 1)
           return Math.max(0, Math.min(presets.length - 1, from + intent.steps))
         })
-      } else if (intent.kind === 'crate_load') {
+      } else if (intent.kind === 'browse_load') {
         const preset = presets[highlighted]
         if (preset) onLoad(intent.deck, preset)
       }
