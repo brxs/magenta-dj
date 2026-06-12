@@ -566,3 +566,14 @@
   text-transform: uppercase;
   color: var(--color-text-silkscreen);
 }
+
+/* ---------- zoom strip (M22 beat view) ---------- */
+
+.ui-zoomstrip {
+  width: 100%;
+  height: 5.5rem;
+  display: block;
+  background: var(--color-surface-inset);
+  border-radius: var(--radius-s);
+  box-shadow: var(--inset-border);
+}

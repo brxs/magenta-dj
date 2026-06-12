@@ -19,13 +19,16 @@ import { useMidi } from './control/useMidi'
 import { MediaExplorer } from './media/MediaExplorer'
 import { DeckColumn } from './deck/DeckColumn'
 import { useDeck } from './deck/useDeck'
+import { BeatView } from './mixer/BeatView'
 import { MixerStrip, type ChannelControls } from './mixer/MixerStrip'
+import { Select } from './ui/Select'
 import {
   deletePreset,
   loadAppSettings,
   loadPresets,
   updateAppSettings,
   upsertPresets,
+  type BeatViewLayout,
 } from './persistence'
 import type { StylePreset } from './presets'
 import { combinedRamWarning } from './ramWarning'
@@ -46,6 +49,14 @@ function App() {
   const [cueDevice, setCueDevice] = useState<AudioOutputDevice | null>(
     () => loadAppSettings().cueDevice ?? null,
   )
+  // The beat view's home (M22): centre stacked, top bar, or off.
+  const [beatView, setBeatView] = useState<BeatViewLayout>(
+    () => loadAppSettings().beatView ?? 'center',
+  )
+  const handleBeatView = useCallback((layout: BeatViewLayout) => {
+    setBeatView(layout)
+    updateAppSettings({ beatView: layout })
+  }, [])
 
   // A live backend cue stream's stop function (ADR-0007); null while the
   // cue rides a browser sink or is off. The token guards the async hops:
@@ -377,6 +388,17 @@ function App() {
           </p>
         )}
         <p className="app__hint">{t('app.shortcutsHint')}</p>
+        <div className="app__beatview-switch">
+          <Select
+            label={t('beatview.layout')}
+            value={beatView}
+            options={(['center', 'top', 'off'] as const).map((layout) => ({
+              value: layout,
+              label: t(`beatview.layouts.${layout}`),
+            }))}
+            onChange={(value) => handleBeatView(value as BeatViewLayout)}
+          />
+        </div>
         <MidiControls
           status={midi.status}
           deviceName={midi.deviceName}
@@ -384,6 +406,12 @@ function App() {
           readMonitor={midi.readMonitor}
         />
       </header>
+      {beatView === 'top' && (
+        <BeatView
+          getSourceA={deckA.getZoomSource}
+          getSourceB={deckB.getZoomSource}
+        />
+      )}
       <div className="app__booth">
         <DeckColumn
           deckId="a"
@@ -418,6 +446,12 @@ function App() {
           getTrackPeaks={deckA.getTrackPeaks}
         />
         <div className="app__center">
+          {beatView === 'center' && (
+            <BeatView
+              getSourceA={deckA.getZoomSource}
+              getSourceB={deckB.getZoomSource}
+            />
+          )}
           <MixerStrip
             channels={channels}
             crossfade={crossfade}

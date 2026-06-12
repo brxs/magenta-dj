@@ -56,6 +56,7 @@ function makeEngine(): AudioEngine {
   return {
     createDeckChannel: vi.fn(),
     resume: vi.fn(async () => {}),
+  getContextTime: vi.fn(() => 0),
     setCrossfade: vi.fn(),
     setCueMix: vi.fn(),
     setCueDevice: vi.fn(async () => {}),

@@ -98,6 +98,7 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     dispose: vi.fn(),
   }
   const engine: AudioEngine = {
+    getContextTime: vi.fn(() => 100),
     createDeckChannel: vi.fn(async (_deck, _initial, onStats) => {
       captured.onStats = onStats
       return channel

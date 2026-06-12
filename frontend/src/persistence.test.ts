@@ -102,6 +102,13 @@ describe('persistence', () => {
     })
   })
 
+  it('round-trips the beat view layout and drops garbage (M22)', () => {
+    updateAppSettings({ beatView: 'top' })
+    expect(loadAppSettings().beatView).toBe('top')
+    updateAppSettings({ beatView: 'sideways' as never })
+    expect(loadAppSettings().beatView).toBeUndefined()
+  })
+
   it('round-trips a backend cue device with its flag', () => {
     updateAppSettings({
       cueDevice: { deviceId: 'DDJ-FLX4', label: 'DDJ-FLX4 — phones jack', backend: true },

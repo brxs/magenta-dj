@@ -1,0 +1,134 @@
+import { describe, expect, it } from 'vitest'
+
+import {
+  BAND_HOP_FRAMES,
+  createBandScroller,
+  trackBands,
+  type BandWindowTarget,
+} from './bands'
+
+const SAMPLE_RATE = 48_000
+
+function target(hops: number): BandWindowTarget {
+  return {
+    low: new Float32Array(hops),
+    mid: new Float32Array(hops),
+    high: new Float32Array(hops),
+  }
+}
+
+/** Interleaved stereo of a pure tone. */
+function tone(hz: number, seconds: number): Float32Array {
+  const frames = Math.round(seconds * SAMPLE_RATE)
+  const out = new Float32Array(frames * 2)
+  for (let i = 0; i < frames; i++) {
+    const sample = Math.sin((2 * Math.PI * hz * i) / SAMPLE_RATE) * 0.5
+    out[2 * i] = sample
+    out[2 * i + 1] = sample
+  }
+  return out
+}
+
+function deinterleave(samples: Float32Array): [Float32Array, Float32Array] {
+  const frames = samples.length / 2
+  const left = new Float32Array(frames)
+  const right = new Float32Array(frames)
+  for (let i = 0; i < frames; i++) {
+    left[i] = samples[2 * i]
+    right[i] = samples[2 * i + 1]
+  }
+  return [left, right]
+}
+
+function dominantBand(out: BandWindowTarget, hop: number) {
+  const bands = { low: out.low[hop], mid: out.mid[hop], high: out.high[hop] }
+  return (Object.keys(bands) as (keyof typeof bands)[]).reduce((a, b) =>
+    bands[a] >= bands[b] ? a : b,
+  )
+}
+
+describe('trackBands', () => {
+  it('puts a bass tone in the low band and a bright tone in the high band', () => {
+    const [lowLeft, lowRight] = deinterleave(tone(60, 1))
+    const lowSource = trackBands(lowLeft, lowRight, SAMPLE_RATE)
+    const lowOut = target(8)
+    lowSource.copyWindow(20, lowOut)
+    expect(dominantBand(lowOut, 0)).toBe('low')
+
+    const [hiLeft, hiRight] = deinterleave(tone(10_000, 1))
+    const hiSource = trackBands(hiLeft, hiRight, SAMPLE_RATE)
+    const hiOut = target(8)
+    hiSource.copyWindow(20, hiOut)
+    expect(dominantBand(hiOut, 0)).toBe('high')
+  })
+
+  it('puts a 1 kHz tone in the mid band', () => {
+    const [left, right] = deinterleave(tone(1_000, 1))
+    const source = trackBands(left, right, SAMPLE_RATE)
+    const out = target(4)
+    source.copyWindow(30, out)
+    expect(dominantBand(out, 0)).toBe('mid')
+  })
+
+  it('zeroes outside the data', () => {
+    const [left, right] = deinterleave(tone(60, 0.5))
+    const source = trackBands(left, right, SAMPLE_RATE)
+    const out = target(4)
+    source.copyWindow(source.endHop - 2, out)
+    expect(out.low[0]).toBeGreaterThan(0)
+    expect(out.low[2]).toBe(0)
+    expect(out.low[3]).toBe(0)
+  })
+})
+
+describe('createBandScroller', () => {
+  it('matches the offline pass on the same audio', () => {
+    const samples = tone(60, 2)
+    const scroller = createBandScroller(SAMPLE_RATE)
+    // Feed in uneven chunks: hop accumulation must not care.
+    let offset = 0
+    for (const size of [12_344, 67_890, samples.length]) {
+      const end = Math.min(size + offset, samples.length)
+      scroller.push(samples.subarray(offset, end))
+      offset = end
+      if (offset >= samples.length) break
+    }
+    const [left, right] = deinterleave(samples)
+    const offline = trackBands(left, right, SAMPLE_RATE)
+
+    const fromHop = 50
+    const live = target(16)
+    const reference = target(16)
+    scroller.source().copyWindow(fromHop, live)
+    offline.copyWindow(fromHop, reference)
+    for (let i = 0; i < 16; i++) {
+      expect(live.low[i]).toBeCloseTo(reference.low[i], 5)
+      expect(live.high[i]).toBeCloseTo(reference.high[i], 5)
+    }
+  })
+
+  it('keeps absolute hop indexing across the ring wrap', () => {
+    const scroller = createBandScroller(SAMPLE_RATE)
+    // Push 70 seconds into a 60-second ring.
+    const chunk = tone(60, 5)
+    for (let i = 0; i < 14; i++) scroller.push(chunk)
+    const source = scroller.source()
+    const totalHops = Math.floor((70 * SAMPLE_RATE) / BAND_HOP_FRAMES)
+    expect(source.endHop).toBe(totalHops)
+    expect(source.baseHop).toBe(totalHops - Math.ceil((60 * SAMPLE_RATE) / BAND_HOP_FRAMES))
+    // A window straddling the base: zeros before it, signal after.
+    const out = target(4)
+    source.copyWindow(source.baseHop - 2, out)
+    expect(out.low[0]).toBe(0)
+    expect(out.low[1]).toBe(0)
+    expect(out.low[2]).toBeGreaterThan(0)
+  })
+
+  it('reset forgets the stream', () => {
+    const scroller = createBandScroller(SAMPLE_RATE)
+    scroller.push(tone(60, 2))
+    scroller.reset()
+    const source = scroller.source()
+    expect(source.endHop).toBe(0)
+  })
+})

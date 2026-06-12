@@ -85,3 +85,8 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Beat view switcher in the statusbar (M22): keep the select compact. */
+.app__beatview-switch {
+  width: 8rem;
+}

@@ -41,6 +41,7 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     syncTrack: vi.fn(() => 'synced' as const),
     getTrackBeat: vi.fn(() => null),
     getLiveBeat: vi.fn(() => null),
+    getZoomSource: vi.fn(() => null),
     getTrackPeaks: vi.fn(() => null),
     trim: { mode: 'auto' as const, db: 0 },
     setTrimDb: vi.fn(),

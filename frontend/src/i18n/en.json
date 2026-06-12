@@ -195,5 +195,15 @@
     "error": {
       "message": "Deck error: {{message}}"
     }
+  },
+  "beatview": {
+    "title": "Beat view",
+    "deck": "Deck {{id}} close-up",
+    "layout": "Beat view",
+    "layouts": {
+      "center": "Center",
+      "top": "Top bar",
+      "off": "Off"
+    }
   }
 }

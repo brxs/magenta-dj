@@ -158,6 +158,9 @@ export type StatsHandler = (stats: {
 }) => void
 
 export type AudioEngine = {
+  /** The shared context clock, or null before the bus exists — the
+   * zoom view extrapolates played positions in this domain (M22). */
+  getContextTime: () => number | null
   createDeckChannel: (
     deckId: DeckId,
     initial: {
@@ -257,6 +260,9 @@ type Recorder = {
 
 export function createAudioEngine(): AudioEngine {
   let busPromise: Promise<Bus> | null = null
+  // The raw context handle for synchronous clock reads (M22); set the
+  // moment the bus builds, null before.
+  let liveContext: AudioContext | null = null
   let crossfadePosition = INITIAL_CROSSFADE
   let cueMixPosition = INITIAL_CUE_MIX
   // The cue feed's second sink (ADR-0006): an audio element carrying the
@@ -273,6 +279,7 @@ export function createAudioEngine(): AudioEngine {
 
   async function buildBus(): Promise<Bus> {
     const context = new AudioContext({ sampleRate: SAMPLE_RATE })
+    liveContext = context
     try {
       await context.audioWorklet.addModule('/player-worklet.js')
       const master = context.createGain()
@@ -365,6 +372,9 @@ export function createAudioEngine(): AudioEngine {
   }
 
   return {
+    getContextTime() {
+      return liveContext?.currentTime ?? null
+    },
     async createDeckChannel(deckId, initial, onStats) {
       const bus = await ensureBus()
       const worklet = new AudioWorkletNode(bus.context, 'pcm-player', {

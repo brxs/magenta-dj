@@ -84,3 +84,9 @@
   font: 500 var(--text-s) var(--font-ui);
   color: var(--color-led-danger);
 }
+
+/* ---------- beat view (M22) ---------- */
+
+.beatview {
+  gap: var(--space-2);
+}

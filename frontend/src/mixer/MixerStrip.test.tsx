@@ -28,6 +28,7 @@ vi.mock('../audio/cueStream', () => ({
 
 function makeEngine(overrides: Partial<AudioEngine> = {}): AudioEngine {
   return {
+    getContextTime: vi.fn(() => 0),
     createDeckChannel: vi.fn(),
     resume: vi.fn(async () => {}),
     setCrossfade: vi.fn(),
