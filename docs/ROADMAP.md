@@ -691,7 +691,25 @@ by level measurement in e2e like M6.
 
 ## M18 — Generated pads: text-to-audio into the loop slots
 
-**Status: ⬜ planned.**
+**Status: ✅ done (2026-06-12).** All five scope items shipped on
+ADR-0012's architecture, plus one mid-milestone upgrade: Magenta
+rendering got promoted from "borrow a stopped deck's worker" to a
+dedicated third engine, so pads fill with the booth's own sound world
+while both decks stream. Measured on this machine (Apple M5, 16 GB):
+sa3_mlx generates a clip in ~1–1.5 s of whole-process wall (model
+load included) at ≤1.5 GB transient, and the integration listen
+caught sm-music breaking up below ~4 s — generated loops are floored
+at 7 s in whole bars (a 3.6 s request was garbled from CLI and API
+alike; 7.2 s clean). Exit criteria verified live (`verify_m18.mjs`,
+in `just verify-ui`): zero underruns on both decks through all three
+engines — including the render worker's lazy spawn and model load —
+the intercepted loop request sat at exactly 4 bars of the locked
+134 BPM with the tempo stamped into the prompt, pending → ready
+honest on every slot, and a one-shot fired over an active loop left
+it frozen. The audible half ticked by ear against
+[`m18-checklist.md`](m18-checklist.md): floored loops clean, Magenta
+clips unmistakably the booth's engine, one-shots overlaying with EQ
+live, SAMPLER LEDs truthful throughout.
 
 **Goal:** the freeze pads (M13) can only capture what a deck already
 played. Stable Audio 3's open-weight models generate finished audio

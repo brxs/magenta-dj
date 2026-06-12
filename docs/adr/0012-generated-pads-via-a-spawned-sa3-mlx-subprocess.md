@@ -1,6 +1,6 @@
 # 0012. Generated pads via a spawned sa3_mlx subprocess
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-12
 - **Deciders:** Daniel Peter
 
