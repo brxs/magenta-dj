@@ -1,6 +1,7 @@
 # 0014. Beat-matching via varispeed tracks against the measured stream
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-06-13, after the device pass — see
+  `docs/m20-hardware-checklist.md`)
 - **Date:** 2026-06-12
 - **Deciders:** Daniel Peter
 

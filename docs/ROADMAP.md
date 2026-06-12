@@ -167,67 +167,33 @@ deck keeps rolling across mode switches. Measured: SA3 medium composes
 `just setup`. Verified by `verify_m19.mjs` +
 [`m19-hardware-checklist.md`](m19-hardware-checklist.md).
 
-## M20 — Beatgrids and sync: the track follows the booth
+### M20 — Beatgrids and sync: the track follows the booth ✅ (2026-06-13)
 
-**Status: 🔶 built (2026-06-12), pending hardware verification.** All
-four scope items shipped on ADR-0014: the offline grid pass (period
-refined by fold-resultant search, drift refused by half-split
-agreement — a 120→126 splice yields no grid), varispeed with the
-tempo sliders mapped at last, SYNC from gated BPMs alone (the grid
-cannot take tempo-matching down with it), the dual-role jog
-(paused = seek, playing = stepped-bend phase nudge), grid ticks on
-the overview, and a phase meter comparing the track's grid clock
-against the live deck's beat **at the speakers** — the worklet now
-reports consumed frames in its own clock, because the wire feed
-leads the room by the buffer. Hardened against real material: both
-folds ride the LOW band's linear energy rise (full-band and even
-log-domain folds cancel against offbeat hats), the grid floor is
-calibrated on real renders (rolling techno folds at 0.50–0.65;
-each half owes its own coherence so a spliced tempo still refuses),
-and a single breathing estimate rides out on the gate's grace.
-Measured live (`verify_m20.mjs`): SYNC landed the gated stream BPM
-to the decimal, and a track-to-track lock held a full minute at
-**0.000 beats/min drift**. The audible half awaits
-[`m20-hardware-checklist.md`](m20-hardware-checklist.md).
+[ADR-0014](adr/0014-beat-matching-via-varispeed-tracks-against-the-measured-stream.md):
+real beat-matching, one-directional by design — **the track follows the
+booth** (ADR-0004 still bars generation tempo). Offline beatgrid at
+load (period refined by fold-resultant search; both folds ride the LOW
+band's linear energy rise; floors calibrated on real renders; a spliced
+tempo refuses), varispeed ±8% with the FLX4 tempo sliders mapped at
+last, SYNC from gated BPMs alone, dual-role jog (paused = fine seek,
+playing = backlog-adaptive phase bend, SHIFT = scrub on its own CC
+`0x29`), and a phase meter that compares clocks **at the speakers** via
+worklet-reported consumed frames. Measured (`verify_m20.mjs`): SYNC
+landed the gated BPM to the decimal; a track-to-track lock held a
+minute at **0.000 beats/min** drift. Three FLX4 runs fed fixes back
+([checklist](m20-hardware-checklist.md)); verdict: "a truly novel take
+on beat matching."
 
-**Goal:** real beat-matching. A playback deck holds its entire decoded
-buffer, so a proper **beatgrid** — BPM *and* beat phase — is computable
-offline at load, far more accurately than any live estimate; and
-`AudioBufferSourceNode.playbackRate` gives varispeed for free. The live
-stream cannot change tempo (ADR-0004 stands for generation), so sync is
-one-directional by design: **the track follows the booth** — match the
-track's rate to the other deck's gated BPM, then ride the phase.
+### M22 — Dual zoomed waveforms: visual beatmatching ✅ (2026-06-13)
 
-Scope, ordered by risk:
-
-1. **Beatgrid analysis (ADR).** Extend the M14 estimator family with an
-   offline grid pass: BPM plus first-beat phase over the decoded buffer,
-   constant-tempo assumption recorded (generated tracks are steady;
-   folder tracks may drift — measure on a corpus). Same honesty rule as
-   M14: no confident grid, no grid shown. Kill criterion: if phase
-   proves unstable on the corpus, grid display and quantise park here —
-   varispeed and manual beat-matching still ship.
-2. **Varispeed.** A tempo slider per playback deck (±8% default range)
-   driving `playbackRate`; pitch shifts with rate — the classic
-   varispeed trade-off, recorded; time-stretch is a Later idea. The FLX4
-   **tempo sliders** map at last (M7 left them deliberately unmapped;
-   the ADR records why that reversal doesn't touch ADR-0004 — playback
-   rate is not generation tempo). Position math in `audio/track.ts`
-   grows a rate term, still pure.
-3. **SYNC and phase.** A SYNC control matches the track's BPM to the
-   other deck's gated BPM (refusing honestly when the gate is blank); a
-   phase meter shows the beat offset between decks; the jog becomes
-   mode-aware like a real deck — **playing = phase nudge, paused = seek**
-   (today's behaviour).
-4. **Grid display.** Beat ticks on the TrackOverview, downbeats heavier,
-   only while the grid is confident.
-
-**Exit criteria:** load a steady track against a streaming deck, press
-SYNC, and the beats lock audibly for a minute with the phase meter
-agreeing; the jog corrects drift while playing; the tempo slider rides
-the rate smoothly from screen and hardware; grid math unit-tested
-against click tracks and drifting fixtures; verified on the device
-against a checklist.
+Pulled forward into M20's verification — judging an audible lock with
+only a needle proved too hard. Hop-indexed band envelopes for both
+decks (offline at load; a rolling live scroller verified identical on
+the same audio), drawn as colour at 60 Hz with grid-red beat marks from
+each deck's M20 clock; stacked BeatView with a persisted four-way
+layout switcher (centre / vertical / top bar / off). Replaced the
+decorative per-deck analyser strip. A true spectrogram renderer stays a
+Later idea. Verified by eye alongside the M20 device runs.
 
 ## M21 — Hot cues and track loops
 
@@ -255,53 +221,6 @@ while the track plays; a 4-beat loop locks seamlessly on the grid and
 releases cleanly; quantise degrades honestly without a grid; new intents
 and mapping rows unit-tested; verified on the device against a
 checklist.
-
-## M22 — Dual zoomed waveforms: visual beatmatching
-
-**Status: 🔶 built (2026-06-12), pending eye verification.** Pulled
-forward into the M20 verification workflow — judging an audible lock
-with only a needle proved too hard on the device. Shipped: hop-indexed
-band envelopes for both decks (offline at track load; a rolling
-60-second scroller on the live wire, verified identical to the offline
-pass on the same audio), the ZoomStrip drawing them as colour at 60 Hz
-with beat marks from each deck's M20 clock, the stacked BeatView, and
-the persisted three-way layout switcher. Verified by eye alongside the
-M20 checklist.
-
-**Goal:** the visual half of beat-matching — stacked, beat-aligned,
-scrolling **band-coloured** close-up waveforms for both decks
-(lows/mids/highs as colour, amplitude as height — the rekordbox
-convention; a true spectrogram is a later renderer mode), with beat
-marks from each deck's M20 clock. The honest catch: today's per-deck
-strip is decorative (a post-fader analyser window); this milestone
-makes the close-up sample-accurate. M20 already built the hard
-prerequisites: the worklet reports played frames in the audio clock,
-and both decks carry beat clocks to draw marks from.
-
-Scope, ordered by risk:
-
-1. **Sample-accurate sources.** Track deck: slice the decoded buffer
-   around the playhead (cheap, exact; band envelopes computed offline
-   at load). Live deck: a real feed from the pushed PCM (the beat
-   tracker's tap), aligned to the played position via the worklet's
-   consumed-frames clock (M20) — incremental band envelopes as chunks
-   arrive.
-2. **The stacked view.** Both decks' zoom strips stacked in the centre,
-   playheads fixed mid-screen, beat marks overlaid where each clock is
-   confident (heavier downbeats); canvas-rendered, no per-frame React.
-3. **Layout switcher, persisted.** Three options: centre stacked
-   (between the deck columns — the beatmatch view), full-width bar
-   above the booth, and compact/off (today's per-deck strips stay the
-   minimal mode).
-4. **Alignment truth.** When M20 says the decks are in sync, the marks
-   visually coincide — the view must not lie about phase.
-
-**Exit criteria:** both strips scroll in lockstep with what is heard
-(no perceptible lag against transients); a synced pair shows coinciding
-beat marks; the band colouring visibly separates kicks from hats; all
-three layouts switch live and the choice survives a reload; 60 Hz with
-both decks running and zero added underruns; verified by eye against a
-checklist on the device.
 
 ## Later (not committed)
 
