@@ -9,6 +9,12 @@ export type AppIntentHandlers = {
   onCueMix: (position: number) => void
 }
 
+/** Seconds per jog tick. Feel-tuned starting point: the FLX4 jog
+ * sends single ticks at human turn speed, so a slow turn rides the
+ * playhead and a spin jumps bars — verified by hand on the device
+ * (the M19 checklist). */
+export const JOG_SEEK_SECONDS = 0.5
+
 /** The App-owned slice of the intent union: transport, deck prep, channel
  * volume/EQ/cue, the crossfader, and the cue mix. Style and record intents
  * are handled where that state lives (DeckColumn, MixerStrip). Pure
@@ -82,6 +88,14 @@ export function applyAppIntent(
     case 'loop_clear':
       decks[intent.deck].clearLoopPad(intent.index)
       return
+    case 'track_seek': {
+      const deck = decks[intent.deck]
+      // Jog ticks only mean something on a playback deck; the live
+      // stream keeps its no-scratch stance (ADR-0004).
+      if (deck.mode !== 'playback') return
+      deck.nudgeTrack(intent.steps * JOG_SEEK_SECONDS)
+      return
+    }
     case 'crossfade':
       handlers.onCrossfade(intent.value)
       return

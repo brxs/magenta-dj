@@ -38,6 +38,11 @@ half no script can tick (ADR-0013).
       parked.
 - [ ] Click (or drag) on the track overview jumps the playhead; the
       audio follows seamlessly.
+- [ ] The jog wheel seeks the track — clockwise forward, a slow turn
+      rides the playhead, a spin jumps bars. Judge the feel: the rate
+      is 0.5 s per tick (`JOG_SEEK_SECONDS`); if it's too touchy or
+      too slow, note the better value. On a realtime deck the jog
+      stays inert.
 - [ ] Let the track run out: explicit silence, status "Track — ended",
       playhead parked at the end. PLAY restarts from the top.
 

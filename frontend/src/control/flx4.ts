@@ -65,6 +65,9 @@ export function isPadModeSwitch(data: ArrayLike<number>): boolean {
 
 const CC_DECK: Partial<Record<number, DeckId>> = { 0xb0: 'a', 0xb1: 'b' }
 const MIXER_STATUS = 0xb6
+/** Jog wheel turn CCs (platter touched / rim), relative around 0x40 —
+ * the Pioneer scheme per the Mixxx chart; confirm with the monitor. */
+const JOG_CCS = [0x21, 0x22]
 const LSB_OFFSET = 0x20
 const MAX_14BIT = (127 << 7) | 127
 /** Browse rotary (M16): a RELATIVE encoder on the mixer status — small
@@ -208,6 +211,16 @@ export function createFlx4Translator(): Flx4Translator {
         kind: 'browse_scroll',
         steps: value < 0x40 ? value : value - 0x80,
       }
+    }
+
+    // Jog wheels are relative too, 0x40-centred (0x41 = +1 tick CW,
+    // 0x3F = −1): intercepted before the absolute MSB/LSB machinery.
+    // Only a playback deck acts on them (App-side); the live stream
+    // still has no scratch concept (ADR-0004).
+    const jogDeck = CC_DECK[status]
+    if (jogDeck && JOG_CCS.includes(number)) {
+      if (value === 0x40) return null
+      return { kind: 'track_seek', deck: jogDeck, steps: value - 0x40 }
     }
 
     const msbBuild = ccBuilder(status, number, shiftHeld)

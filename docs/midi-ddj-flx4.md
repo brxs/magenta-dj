@@ -39,7 +39,6 @@ sends it on every device bind so a fresh connection starts in sync.
 | Control | Message | Why |
 | ------- | ------- | --- |
 | Tempo sliders | `0xB0`/`0xB1` CC `0x00` range | no tempo parameter (ADR-0004) |
-| Jog wheels | `0xB0`/`0xB1` CC `0x21`/`0x22` etc. | no scratch concept in v1; cursor-nudge candidate later |
 | TRIM, BEAT SYNC, loop section | various | no app counterpart yet (CUE went in M10, browse/load in M16) |
 
 ## Mapped in M10 (headphone cue)
@@ -68,10 +67,14 @@ remains the verification tool.
 | LOAD deck 1 / 2 | `0x96` notes `0x46`/`0x47` | load the highlighted item onto that deck (`browse_load`): a crate flips the deck to realtime, a track to playback (ADR-0013) |
 | Browse rotary (press) | `0x96` note `0x41` | cycle the Media Explorer's visible tab (`browse_tab`, M19). The Mixxx FLX4 chart defines no press control; the byte is interpolated from the DDJ-400 family — confirm with the monitor |
 
-## Reinterpreted in M19 (playback deck)
+## Mapped in M19 (playback deck)
 
-No new bytes: on a deck in playback mode the existing transport
-messages drive the track instead of the worker — PLAY/PAUSE
+| Control | Message | → App intent |
+| ------- | ------- | ------------ |
+| Jog wheel (turn) deck 1 / 2 | `0xB0`/`0xB1` CC `0x21` (platter) / `0x22` (rim), relative around `0x40` (`0x41` = +1 CW) | relative seek on a playback deck (`track_seek`); a realtime deck ignores the ticks — no scratch concept on the stream (ADR-0004). Encoding from the Mixxx chart; confirm with the monitor |
+
+Reinterpreted, no new bytes: on a deck in playback mode the existing
+transport messages drive the track instead of the worker — PLAY/PAUSE
 (`0x90`/`0x91` note `0x0B`) plays/parks the track, transport CUE
 (note `0x0C`) returns it to the top, parked. Everything else on the
 strip (faders, EQ, CFX, pads, headphone cue) is untouched because the

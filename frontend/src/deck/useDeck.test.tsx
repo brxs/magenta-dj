@@ -1000,6 +1000,18 @@ describe('useDeck playback mode (M19)', () => {
     })
   })
 
+  it('nudgeTrack seeks relative to the channel playhead, not the polled state', async () => {
+    const { result, channel } = await loadedDeck()
+    vi.mocked(channel.getTrackStatus).mockReturnValue({
+      position: 10,
+      duration: 120,
+      playing: true,
+      ended: false,
+    })
+    act(() => result.current.nudgeTrack(2.5))
+    expect(channel.seekTrack).toHaveBeenCalledWith(12.5)
+  })
+
   it('a rolling track hands straight back to the stream on leaving', async () => {
     const { result, channel } = await loadedDeck()
     vi.mocked(channel.getTrackStatus).mockReturnValue({

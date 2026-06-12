@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { initialDeckState, type DeckState } from '../deck/deckState'
 import type { DeckControls } from '../deck/useDeck'
-import { applyAppIntent } from './appIntents'
+import { applyAppIntent, JOG_SEEK_SECONDS } from './appIntents'
 
 function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
   return {
@@ -31,6 +31,7 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     loadTrack: vi.fn(async () => true),
     leavePlayback: vi.fn(),
     seekTrack: vi.fn(),
+    nudgeTrack: vi.fn(),
     getTrackPeaks: vi.fn(() => null),
     trim: { mode: 'auto' as const, db: 0 },
     setTrimDb: vi.fn(),
@@ -252,5 +253,25 @@ describe('applyAppIntent', () => {
     applyAppIntent({ kind: 'deck_prep', deck: 'a' }, decks(playing), noHandlers)
     expect(playing.prime).toHaveBeenCalled()
     expect(playing.stop).not.toHaveBeenCalled()
+  })
+
+  it('jog ticks seek a playback deck, scaled to seconds', () => {
+    const deck = playbackDeck(true)
+    applyAppIntent(
+      { kind: 'track_seek', deck: 'a', steps: 3 },
+      decks(deck),
+      noHandlers,
+    )
+    expect(deck.nudgeTrack).toHaveBeenCalledWith(3 * JOG_SEEK_SECONDS)
+  })
+
+  it('a realtime deck ignores jog ticks — still no scratch concept', () => {
+    const deck = fakeDeck({ playing: true })
+    applyAppIntent(
+      { kind: 'track_seek', deck: 'a', steps: 3 },
+      decks(deck),
+      noHandlers,
+    )
+    expect(deck.nudgeTrack).not.toHaveBeenCalled()
   })
 })

@@ -319,6 +319,38 @@ describe('createFlx4Translator', () => {
       expect(translate([0x96, 0x41, RELEASE])).toBeNull()
     })
 
+    it.each([
+      [0xb0, 0x21, 'a'],
+      [0xb1, 0x21, 'b'],
+      [0xb0, 0x22, 'a'],
+      [0xb1, 0x22, 'b'],
+    ] as const)(
+      'jog turn (status 0x%s CC 0x%s) seeks deck %s relatively',
+      (status, cc, deck) => {
+        const translate = createFlx4Translator()
+        // 0x40-centred: 0x41 = one tick clockwise, 0x3e = two back.
+        expect(translate([status, cc, 0x41])).toEqual({
+          kind: 'track_seek',
+          deck,
+          steps: 1,
+        })
+        expect(translate([status, cc, 0x3e])).toEqual({
+          kind: 'track_seek',
+          deck,
+          steps: -2,
+        })
+        expect(translate([status, cc, 0x40])).toBeNull()
+      },
+    )
+
+    it('jog ticks never pollute the 14-bit MSB cache', () => {
+      const translate = createFlx4Translator()
+      translate([0xb0, 0x21, 0x41]) // jog tick
+      // CC 0x41 would be 0x21's LSB if the jog entered the MSB cache;
+      // it must stay unmapped.
+      expect(translate([0xb0, 0x41, 0x10])).toBeNull()
+    })
+
     it('maps the HEADPHONES MIX knob to the cue blend', () => {
       const translate = createFlx4Translator()
       expect(translate([0xb6, 0x0c, 0x40])).toEqual({

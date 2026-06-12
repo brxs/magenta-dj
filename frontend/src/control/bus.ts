@@ -30,6 +30,9 @@ export type ControlIntent =
   | { kind: 'browse_load'; deck: DeckId }
   // Rotary press (M19): cycle the explorer's visible tab.
   | { kind: 'browse_tab' }
+  // Jog wheel ticks (M19): relative seek on a playback deck; a
+  // realtime deck ignores them (ADR-0004 — no scratch concept).
+  | { kind: 'track_seek'; deck: DeckId; steps: number }
   | { kind: 'preset_load'; deck: DeckId; preset: StylePreset }
 
 export type ControlBus = {

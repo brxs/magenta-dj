@@ -126,6 +126,9 @@ export type DeckControls = {
   /** Jump the track playhead (overview click / FLX4); playback-mode
    * only, a no-op on the live stream. */
   seekTrack: (seconds: number) => void
+  /** Relative seek (the jog wheel): reads the channel's live playhead
+   * so rapid ticks accumulate instead of racing the 250 ms poll. */
+  nudgeTrack: (seconds: number) => void
   /** Static envelope of the loaded track for the overview strip. */
   getTrackPeaks: (
     buckets: number,
@@ -543,6 +546,15 @@ export function useDeck(deckId: DeckId): DeckControls {
     )
   }, [])
 
+  const nudgeTrack = useCallback(
+    (seconds: number) => {
+      const status = channelRef.current?.getTrackStatus()
+      if (!status) return
+      seekTrack(status.position + seconds)
+    },
+    [seekTrack],
+  )
+
   // The playhead readout follows the channel while a track is loaded —
   // the graph is the source of truth (the LevelMeter pattern).
   useEffect(() => {
@@ -859,6 +871,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     loadTrack,
     leavePlayback,
     seekTrack,
+    nudgeTrack,
     getTrackPeaks,
     trim,
     setTrimDb,
