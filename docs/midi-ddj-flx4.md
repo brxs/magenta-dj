@@ -66,7 +66,7 @@ remains the verification tool.
 | ------- | ------- | ------------ |
 | Browse rotary (turn) | `0xB6` CC `0x40`, relative (small = CW, >`0x40` = CCW two's complement) | move the visible Media Explorer tab's highlight (`browse_scroll`) — handled before the 14-bit CC pipeline; confirm direction with the monitor |
 | LOAD deck 1 / 2 | `0x96` notes `0x46`/`0x47` | load the highlighted item onto that deck (`browse_load`): a crate flips the deck to realtime, a track to playback (ADR-0013) |
-| Browse rotary (press) | unmapped | the Mixxx chart defines no press control; nothing to bind |
+| Browse rotary (press) | `0x96` note `0x41` | cycle the Media Explorer's visible tab (`browse_tab`, M19). The Mixxx FLX4 chart defines no press control; the byte is interpolated from the DDJ-400 family — confirm with the monitor |
 
 ## Reinterpreted in M19 (playback deck)
 

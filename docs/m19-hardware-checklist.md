@@ -56,6 +56,11 @@ half no script can tick (ADR-0013).
 
 - [ ] The browse rotary scrolls the *visible* explorer tab's list —
       crates, generated tracks, or folder files.
+- [ ] Pressing the rotary cycles the tabs: Crates → Generate → Folder
+      and around. The byte (`0x96 41`) is interpolated from the
+      DDJ-400 family — if the press does nothing, read the actual
+      bytes off the monitor and correct `flx4.ts` +
+      `midi-ddj-flx4.md`.
 - [ ] LOAD 2 loads the highlighted item onto deck B: a track flips it
       to playback, a crate flips it back to realtime (style + FX land
       as in M16).

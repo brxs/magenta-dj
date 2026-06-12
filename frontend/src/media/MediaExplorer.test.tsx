@@ -217,6 +217,22 @@ describe('MediaExplorer', () => {
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
   })
 
+  it('cycles the visible tab on a hardware rotary press', () => {
+    const bus = createControlBus()
+    renderExplorer({}, [], bus)
+    act(() => bus.publish({ kind: 'browse_tab' }))
+    expect(screen.getByLabelText('Track prompt')).toBeInTheDocument()
+    act(() => bus.publish({ kind: 'browse_tab' }))
+    expect(
+      screen.getByRole('button', { name: 'Choose folder' }),
+    ).toBeInTheDocument()
+    act(() => bus.publish({ kind: 'browse_tab' }))
+    // Full circle: back on the crates tab.
+    expect(
+      screen.getByText("No presets yet — save a deck's style below its pad"),
+    ).toBeInTheDocument()
+  })
+
   it('says so when folder browsing is unsupported', () => {
     renderExplorer()
     fireEvent.click(screen.getByRole('button', { name: 'Folder' }))

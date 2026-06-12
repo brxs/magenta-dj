@@ -75,6 +75,10 @@ const BROWSE_CC = 0x40
 /** LOAD buttons (M16): their own status byte, one note per deck. */
 const LOAD_STATUS = 0x96
 const LOAD_NOTE_DECK: Partial<Record<number, DeckId>> = { 0x46: 'a', 0x47: 'b' }
+/** Rotary press (M19): interpolated from the DDJ-400 family chart —
+ * the Mixxx FLX4 map defines no press control. Confirm with the
+ * monitor (docs/midi-ddj-flx4.md). */
+const BROWSE_PRESS_NOTE = 0x41
 
 /** Builders keyed by MSB CC number, per status byte. The LSB lives on
  * CC+0x20 and is resolved back to these entries. Resolved per message,
@@ -170,6 +174,9 @@ function buttonIntent(
   const loadDeck = LOAD_NOTE_DECK[note]
   if (status === LOAD_STATUS && loadDeck) {
     return { kind: 'browse_load', deck: loadDeck }
+  }
+  if (status === LOAD_STATUS && note === BROWSE_PRESS_NOTE) {
+    return { kind: 'browse_tab' }
   }
   return null
 }

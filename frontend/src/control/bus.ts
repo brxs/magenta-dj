@@ -28,6 +28,8 @@ export type ControlIntent =
   // owning deck column.
   | { kind: 'browse_scroll'; steps: number }
   | { kind: 'browse_load'; deck: DeckId }
+  // Rotary press (M19): cycle the explorer's visible tab.
+  | { kind: 'browse_tab' }
   | { kind: 'preset_load'; deck: DeckId; preset: StylePreset }
 
 export type ControlBus = {

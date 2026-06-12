@@ -313,6 +313,12 @@ describe('createFlx4Translator', () => {
       expect(translate([0x96, note, RELEASE])).toBeNull()
     })
 
+    it('rotary press cycles the explorer tab (M19, interpolated byte)', () => {
+      const translate = createFlx4Translator()
+      expect(translate([0x96, 0x41, PRESS])).toEqual({ kind: 'browse_tab' })
+      expect(translate([0x96, 0x41, RELEASE])).toBeNull()
+    })
+
     it('maps the HEADPHONES MIX knob to the cue blend', () => {
       const translate = createFlx4Translator()
       expect(translate([0xb6, 0x0c, 0x40])).toEqual({

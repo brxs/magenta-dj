@@ -137,6 +137,15 @@ export function MediaExplorer({
   const bus = useControlBus()
   useEffect(() =>
     bus.subscribe((intent) => {
+      if (intent.kind === 'browse_tab') {
+        // Rotary press: cycle the visible tab from the hardware.
+        setTab((current) => {
+          const order: MediaTab[] = ['crates', 'generate', 'folder']
+          return order[(order.indexOf(current) + 1) % order.length]
+        })
+        setHighlight(0)
+        return
+      }
       if (tab === 'crates') return // CrateBrowser owns its own list
       const count = tab === 'generate' ? ready.length : files.length
       if (intent.kind === 'browse_scroll') {
