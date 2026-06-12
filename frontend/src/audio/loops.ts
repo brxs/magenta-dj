@@ -35,6 +35,15 @@ export function quantiseLoopSeconds(seconds: number, bpm: number): number {
   return beats * beat
 }
 
+/** Generated loops (M18) quantise to whole BARS, not beats: a generated
+ * phrase is composed material, and wrapping it mid-bar throws away the
+ * musical sentence the prompt asked for. Four beats to the bar — the
+ * idiom of everything the decks produce. Minimum one bar. */
+export function quantiseLoopBars(seconds: number, bpm: number): number {
+  const bar = (60 / bpm) * 4
+  return Math.max(1, Math.round(seconds / bar)) * bar
+}
+
 /** Build a seamless loop from a captured channel: the first
  * `crossfadeFrames` of the output blend the capture's surplus tail into
  * its head, so the wrap point is continuous by construction. The fade

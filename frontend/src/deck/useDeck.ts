@@ -5,7 +5,9 @@ import { EQ_FLAT, type EqBand } from '../audio/eq'
 import { fxRestPosition, type FxKind } from '../audio/fx'
 import {
   DEFAULT_LOOP_SECONDS,
+  LOOP_CROSSFADE_SECONDS,
   LOOP_SLOT_COUNT,
+  quantiseLoopBars,
   quantiseLoopSeconds,
 } from '../audio/loops'
 import { createLoudnessTracker, trimDbFor } from '../audio/master'
@@ -27,13 +29,27 @@ const RECONNECT_DELAY_MS = 2_000
  * manual knob move takes over until auto is re-engaged. */
 export type TrimState = { mode: 'auto' | 'manual'; db: number }
 
+/** One pad slot. The audio buffers live in the channel; `label` is null
+ * for captures from the deck and the prompt for generated slots (M18).
+ * One-shots overlay the playing source and end themselves; everything
+ * else replaces the live stream while active. */
+export type LoopSlot =
+  | { state: 'empty' }
+  | { state: 'pending'; label: string; oneShot: boolean }
+  | { state: 'filled'; label: string | null; oneShot: boolean }
+
 export type LoopState = {
-  /** Which slots hold a captured loop (the buffers live in the channel). */
-  filled: boolean[]
+  slots: LoopSlot[]
   /** The slot currently replacing the live stream, if any. */
   active: number | null
   /** Capture length for the next press; persisted, unlike the loops. */
   seconds: number
+}
+
+const EMPTY_SLOT: LoopSlot = { state: 'empty' }
+
+function withSlot(current: LoopState, slot: number, value: LoopSlot): LoopSlot[] {
+  return current.slots.map((existing, index) => (index === slot ? value : existing))
 }
 
 export type DeckControls = {
@@ -57,6 +73,12 @@ export type DeckControls = {
   toggleLoopPad: (slot: number) => void
   clearLoopPad: (slot: number) => void
   setLoopSeconds: (seconds: number) => void
+  /** Generated pads (M18, ADR-0012): fill the first empty slot from a
+   * text prompt — sfx one-shots overlay, loops replace like captures.
+   * Loop lengths snap to whole bars while the tempo gate is locked. */
+  generateToPad: (prompt: string, kind: 'sfx' | 'loop') => void
+  /** Why the last generation produced nothing, until the next attempt. */
+  generateError: string | null
   /** Detected tempo of the deck's stream (M14, ADR-0010), or null
    * while the honesty gate refuses — never a wrong number. */
   bpm: number | null
@@ -102,7 +124,7 @@ export function useDeck(deckId: DeckId): DeckControls {
   )
   const fxRef = useRef(fx)
   const [loop, setLoopState] = useState<LoopState>(() => ({
-    filled: Array<boolean>(LOOP_SLOT_COUNT).fill(false),
+    slots: Array<LoopSlot>(LOOP_SLOT_COUNT).fill(EMPTY_SLOT),
     active: null,
     seconds: loadDeckSettings(deckId).loopSeconds ?? DEFAULT_LOOP_SECONDS,
   }))
@@ -115,6 +137,11 @@ export function useDeck(deckId: DeckId): DeckControls {
   // inside that window must win over the stale capture. Every loop
   // gesture bumps this, and the capture callback bails if it moved.
   const loopGestureRef = useRef(0)
+  // Generations are slower round-trips with the same race: a clear (or
+  // a newer generation) during the flight must win. Per-slot counters,
+  // bumped by anything that takes the slot over.
+  const slotGenerationRef = useRef<number[]>(Array<number>(LOOP_SLOT_COUNT).fill(0))
+  const [generateError, setGenerateError] = useState<string | null>(null)
   const [bpm, setBpm] = useState<number | null>(null)
   // Tracker + gate per deck (M14), and the loudness tracker behind
   // auto-gain (M17) — all reset on stream discontinuities so an
@@ -331,9 +358,11 @@ export function useDeck(deckId: DeckId): DeckControls {
     channelRef.current?.reset()
     channelRef.current?.setOnAir(true)
     // STOP silences the deck — a running freeze loop goes with it (the
-    // slot keeps its capture), and an in-flight capture may not land.
+    // slot keeps its capture), a ringing one-shot is cut, and an
+    // in-flight capture may not land.
     loopGestureRef.current += 1
     channelRef.current?.stopLoop()
+    channelRef.current?.stopOneShot()
     if (loopRef.current.active !== null) {
       setLoop({ ...loopRef.current, active: null })
     }
@@ -432,13 +461,19 @@ export function useDeck(deckId: DeckId): DeckControls {
       if (!channel || slot < 0 || slot >= LOOP_SLOT_COUNT) return
       const gesture = ++loopGestureRef.current
       const current = loopRef.current
+      const slotState = current.slots[slot]
+      // A pending generation owns the slot; the press waits it out.
+      if (slotState.state === 'pending') return
       if (current.active === slot) {
         channel.stopLoop()
         setLoop({ ...current, active: null })
         return
       }
-      if (current.filled[slot]) {
-        if (channel.playLoop(slot)) setLoop({ ...current, active: slot })
+      if (slotState.state === 'filled') {
+        if (!channel.playLoop(slot)) return
+        // One-shots overlay and end themselves — never "active", which
+        // means "replacing the live stream".
+        if (!slotState.oneShot) setLoop({ ...current, active: slot })
         return
       }
       // One gesture: capture the just-played tail AND freeze onto it.
@@ -462,9 +497,11 @@ export function useDeck(deckId: DeckId): DeckControls {
         const latest = loopRef.current
         setLoop({
           ...latest,
-          filled: latest.filled.map((wasFilled, index) =>
-            index === slot ? true : wasFilled,
-          ),
+          slots: withSlot(latest, slot, {
+            state: 'filled',
+            label: null,
+            oneShot: false,
+          }),
           active: slot,
         })
       })
@@ -476,20 +513,100 @@ export function useDeck(deckId: DeckId): DeckControls {
     (slot: number) => {
       if (slot < 0 || slot >= LOOP_SLOT_COUNT) return
       loopGestureRef.current += 1
+      slotGenerationRef.current[slot] += 1
       const channel = channelRef.current
       const current = loopRef.current
       if (current.active === slot) channel?.stopLoop()
       channel?.clearLoop(slot)
-      if (!current.filled[slot]) return
+      if (current.slots[slot].state === 'empty') return
       setLoop({
         ...current,
-        filled: current.filled.map((wasFilled, index) =>
-          index === slot ? false : wasFilled,
-        ),
+        slots: withSlot(current, slot, EMPTY_SLOT),
         active: current.active === slot ? null : current.active,
       })
     },
     [setLoop],
+  )
+
+  const generateToPad = useCallback(
+    (prompt: string, kind: 'sfx' | 'loop') => {
+      const channel = channelRef.current
+      const trimmed = prompt.trim()
+      if (!channel || !trimmed) return
+      const current = loopRef.current
+      const slot = current.slots.findIndex((entry) => entry.state === 'empty')
+      if (slot === -1) return
+      const oneShot = kind === 'sfx'
+      // A locked tempo (M14) shapes a musical loop on both axes: the
+      // length snaps to whole bars and the prompt carries the figure —
+      // free-length and untouched the moment the gate is blank.
+      const gatedBpm = oneShot ? null : beat.gate.current()
+      const seconds =
+        gatedBpm === null
+          ? current.seconds
+          : quantiseLoopBars(current.seconds, gatedBpm)
+      const requestPrompt =
+        gatedBpm === null ? trimmed : `${trimmed}, ${Math.round(gatedBpm)} BPM`
+      // Loops carry the seam surplus the engine folds away (the capture
+      // convention), so the musical length survives the splice.
+      const requestSeconds = oneShot ? seconds : seconds + LOOP_CROSSFADE_SECONDS
+      const generation = ++slotGenerationRef.current[slot]
+      setGenerateError(null)
+      setLoop({
+        ...current,
+        slots: withSlot(current, slot, {
+          state: 'pending',
+          label: trimmed,
+          oneShot,
+        }),
+      })
+      const stale = () =>
+        channelRef.current !== channel ||
+        slotGenerationRef.current[slot] !== generation
+      void (async () => {
+        try {
+          const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              prompt: requestPrompt,
+              seconds: requestSeconds,
+              kind: oneShot ? 'sfx' : 'music',
+            }),
+          })
+          if (!response.ok) {
+            // The backend's detail names the problem (502/503 carry the
+            // CLI tail or the setup hint).
+            const detail = await response
+              .json()
+              .then((body: { detail?: string }) => body.detail)
+              .catch(() => null)
+            throw new Error(detail || `generation failed (${response.status})`)
+          }
+          const wav = await response.arrayBuffer()
+          if (stale()) return
+          if (!(await channel.loadGeneratedLoop(slot, wav, oneShot))) {
+            throw new Error('generated audio could not be decoded')
+          }
+          if (stale()) return
+          const latest = loopRef.current
+          setLoop({
+            ...latest,
+            slots: withSlot(latest, slot, {
+              state: 'filled',
+              label: trimmed,
+              oneShot,
+            }),
+          })
+        } catch (error) {
+          if (stale()) return
+          const latest = loopRef.current
+          setLoop({ ...latest, slots: withSlot(latest, slot, EMPTY_SLOT) })
+          setGenerateError(error instanceof Error ? error.message : String(error))
+        }
+      })()
+    },
+    [setLoop, beat],
   )
 
   const setLoopSeconds = useCallback(
@@ -524,6 +641,8 @@ export function useDeck(deckId: DeckId): DeckControls {
     toggleLoopPad,
     clearLoopPad,
     setLoopSeconds,
+    generateToPad,
+    generateError,
     bpm,
     captureStyleSample,
     trim,

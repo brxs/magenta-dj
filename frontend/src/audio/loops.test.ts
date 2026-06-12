@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildLoopChannel, quantiseLoopSeconds } from './loops'
+import { buildLoopChannel, quantiseLoopBars, quantiseLoopSeconds } from './loops'
 
 function ramp(length: number): Float32Array {
   return Float32Array.from({ length }, (_, i) => i / length)
@@ -71,5 +71,20 @@ describe('quantiseLoopSeconds', () => {
     // One beat at 200 bpm is 0.3 s — under MIN_LOOP_SECONDS; the
     // quantiser must add beats rather than produce a refused press.
     expect(quantiseLoopSeconds(0.2, 200)).toBeGreaterThanOrEqual(0.5)
+  })
+})
+
+describe('quantiseLoopBars', () => {
+  it('snaps the requested length to the nearest whole bar count', () => {
+    // 124 bpm: bar 1.935 s; 4 s ≈ 2.07 bars → 2 bars.
+    expect(quantiseLoopBars(4, 124)).toBeCloseTo(2 * 4 * (60 / 124), 6)
+  })
+
+  it('is exact when the length already sits on the bar grid', () => {
+    expect(quantiseLoopBars(8, 120)).toBeCloseTo(8, 6)
+  })
+
+  it('never quantises below one bar', () => {
+    expect(quantiseLoopBars(0.5, 120)).toBeCloseTo(2, 6)
   })
 })

@@ -624,7 +624,7 @@ export function DeckColumn({
           {Array.from({ length: LOOP_SLOT_COUNT }, (_, slot) => (
             <Button
               key={slot}
-              lit={loop.filled[slot]}
+              lit={loop.slots[slot].state === 'filled'}
               variant={loop.active === slot ? 'primary' : 'default'}
               aria-label={t('deck.loop.slot', { n: slot + 1 })}
               aria-pressed={loop.active === slot}
