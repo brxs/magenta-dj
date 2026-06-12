@@ -224,3 +224,34 @@ describe('trackBpm', () => {
     expect(Math.abs(bpm! - 128)).toBeLessThanOrEqual(128 * 0.05)
   })
 })
+
+describe('beat anchor (M20)', () => {
+  it('anchors the most recent beat on the click lattice', () => {
+    const tracker = createBeatTracker(SAMPLE_RATE)
+    feed(tracker, clickTrack(128, 16))
+    const estimate = tracker.estimate()!
+    expect(estimate.anchorFrame).toBeDefined()
+    const periodFrames = (60 / 128) * SAMPLE_RATE
+    // Clicks land on period multiples from stream start.
+    const phase = (estimate.anchorFrame! % periodFrames) / periodFrames
+    expect(Math.min(phase, 1 - phase)).toBeLessThanOrEqual(0.12)
+    // And the anchor is recent — the fold tracks now, not the window
+    // average.
+    expect(estimate.anchorFrame!).toBeGreaterThan(
+      16 * SAMPLE_RATE - 3 * periodFrames,
+    )
+    expect(estimate.anchorFrame!).toBeLessThanOrEqual(16 * SAMPLE_RATE)
+  })
+
+  it('withholds the anchor when the fold is incoherent', () => {
+    const tracker = createBeatTracker(SAMPLE_RATE)
+    const noise = noiseSource(11)
+    const samples = new Float32Array(SAMPLE_RATE * 2 * 16)
+    for (let i = 0; i < samples.length; i++) samples[i] = noise() * 0.4
+    feed(tracker, samples)
+    const estimate = tracker.estimate()
+    if (estimate !== null) {
+      expect(estimate.anchorFrame).toBeUndefined()
+    }
+  })
+})

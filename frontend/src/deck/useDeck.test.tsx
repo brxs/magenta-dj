@@ -57,6 +57,10 @@ class FakeWebSocket {
 }
 
 function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
+  // Captured so tests can feed worklet stats into the deck (M20).
+  const captured: { onStats: Parameters<AudioEngine['createDeckChannel']>[2] | null } = {
+    onStats: null,
+  }
   const channel: DeckChannel = {
     postPcm: vi.fn(),
     reset: vi.fn(),
@@ -94,7 +98,10 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     dispose: vi.fn(),
   }
   const engine: AudioEngine = {
-    createDeckChannel: vi.fn(async () => channel),
+    createDeckChannel: vi.fn(async (_deck, _initial, onStats) => {
+      captured.onStats = onStats
+      return channel
+    }),
     resume: vi.fn(async () => {}),
     setCrossfade: vi.fn(),
     setCueMix: vi.fn(),
@@ -107,7 +114,7 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     getMasterGainReduction: vi.fn(() => 0),
     ...overrides,
   }
-  return { engine, channel }
+  return { engine, channel, captured }
 }
 
 function renderDeck(engine: AudioEngine) {
@@ -967,6 +974,7 @@ describe('useDeck playback mode (M19)', () => {
       playing: true,
       ended: false,
       rate: 1,
+      contextTime: 100,
     })
     act(() => void vi.advanceTimersByTime(250))
     expect(result.current.track).toMatchObject({
@@ -1025,6 +1033,7 @@ describe('useDeck playback mode (M19)', () => {
       playing: true,
       ended: false,
       rate: 1,
+      contextTime: 100,
     })
     act(() => result.current.nudgeTrack(2.5))
     expect(channel.seekTrack).toHaveBeenCalledWith(12.5)
@@ -1038,6 +1047,7 @@ describe('useDeck playback mode (M19)', () => {
       playing: true,
       ended: false,
       rate: 1,
+      contextTime: 100,
     })
     const sentBefore = socket(0).sent.length
     await act(async () => result.current.leavePlayback())
@@ -1047,5 +1057,138 @@ describe('useDeck playback mode (M19)', () => {
       JSON.stringify({ type: 'play' }),
     )
     expect(result.current.state.playing).toBe(true)
+  })
+})
+
+describe('useDeck beat clocks (M20)', () => {
+  function clickChannels(bpm: number, seconds: number) {
+    const samples = clickTrack(bpm, seconds, 48_000)
+    const frames = samples.length / 2
+    const left = new Float32Array(frames)
+    const right = new Float32Array(frames)
+    for (let i = 0; i < frames; i++) {
+      left[i] = samples[2 * i]
+      right[i] = samples[2 * i + 1]
+    }
+    return { left, right, samples }
+  }
+
+  it('exposes the live beat clock at the speakers once gated and continuous', async () => {
+    const { engine, captured } = makeFakeEngine()
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(() => result.current.play())
+
+    // Stream a steady click track one wire-second at a time, phase
+    // continuous, with the estimator ticking between chunks.
+    const { samples } = clickChannels(128, 14)
+    const frameStride = 48_000 * 2
+    for (let second = 0; second < 14; second++) {
+      const chunk = samples.slice(second * frameStride, (second + 1) * frameStride)
+      act(() => socket(0).onmessage?.({ data: chunk.buffer }))
+      act(() => void vi.advanceTimersByTime(1_000))
+    }
+    expect(result.current.bpm).not.toBeNull()
+
+    // No stats yet: the clock must stay blank rather than guess.
+    expect(result.current.getLiveBeat()).toBeNull()
+
+    act(() =>
+      captured.onStats?.({
+        underruns: 0,
+        bufferedSeconds: 2,
+        playing: true,
+        playedFrames: 10 * 48_000,
+        contextTime: 100,
+      }),
+    )
+    const clock = result.current.getLiveBeat()
+    expect(clock).not.toBeNull()
+    expect(clock!.periodSeconds).toBeCloseTo(60 / 128, 2)
+    // The reported beat sits on the click lattice: beats play at
+    // contextTime + (k·period − played)/rate for integer k.
+    const beatsFromStart = ((clock!.beatAtContext - 100) * 48_000 + 10 * 48_000) / 48_000 / (60 / 128)
+    const gap = Math.abs(beatsFromStart - Math.round(beatsFromStart))
+    expect(gap).toBeLessThanOrEqual(0.15)
+
+    // Stale stats blank the clock — never a confident lie.
+    act(() => void vi.advanceTimersByTime(3_000))
+    expect(result.current.getLiveBeat()).toBeNull()
+  })
+
+  it('derives the track beat clock from the grid, rate-aware', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { left, right } = clickChannels(120, 24)
+    vi.mocked(channel.loadTrack).mockResolvedValue({
+      duration: 24,
+      sampleRate: 48_000,
+      left,
+      right,
+    })
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(async () => {
+      await result.current.loadTrack(new ArrayBuffer(8), 'Gridded')
+    })
+    const grid = result.current.track!.grid
+    expect(grid).not.toBeNull()
+    expect(Math.abs(grid!.bpm - 120)).toBeLessThanOrEqual(120 * 0.005)
+    // One number: the readout BPM is the grid's refined verdict.
+    expect(result.current.track!.bpm).toBe(grid!.bpm)
+
+    vi.mocked(channel.getTrackStatus).mockReturnValue({
+      position: 10,
+      duration: 24,
+      playing: true,
+      ended: false,
+      rate: 1.05,
+      contextTime: 200,
+    })
+    const clock = result.current.getTrackBeat()
+    expect(clock).not.toBeNull()
+    // Varispeed shortens the beat period in context time.
+    expect(clock!.periodSeconds).toBeCloseTo(60 / grid!.bpm / 1.05, 4)
+    const periodTrack = 60 / grid!.bpm
+    const phase =
+      ((((10 - grid!.firstBeatSeconds) / periodTrack) % 1) + 1) % 1
+    expect(clock!.beatAtContext).toBeCloseTo(200 - phase * clock!.periodSeconds, 4)
+  })
+
+  it('SYNC matches tempo within the envelope and refuses outside it', async () => {
+    const { engine, channel } = makeFakeEngine()
+    const { left, right } = clickChannels(120, 24)
+    vi.mocked(channel.loadTrack).mockResolvedValue({
+      duration: 24,
+      sampleRate: 48_000,
+      left,
+      right,
+    })
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(async () => {
+      await result.current.loadTrack(new ArrayBuffer(8), 'Syncable')
+    })
+    const bpm = result.current.track!.bpm!
+
+    let synced = false
+    act(() => {
+      synced = result.current.syncTrack(bpm * 1.05)
+    })
+    expect(synced).toBe(true)
+    expect(channel.setTrackRate).toHaveBeenCalledWith(expect.closeTo(1.05, 5))
+    expect(result.current.track!.rate).toBeCloseTo(1.05, 5)
+    // The synced echo's clock follows the new effective tempo.
+    expect(channel.setBeatPeriod).toHaveBeenLastCalledWith(
+      expect.closeTo(60 / (bpm * 1.05), 5),
+    )
+
+    act(() => {
+      synced = result.current.syncTrack(bpm * 1.2)
+    })
+    expect(synced).toBe(false)
+    act(() => {
+      synced = result.current.syncTrack(null)
+    })
+    expect(synced).toBe(false)
   })
 })

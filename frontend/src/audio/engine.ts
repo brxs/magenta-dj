@@ -122,6 +122,9 @@ export type DeckChannel = {
     playing: boolean
     ended: boolean
     rate: number
+    /** Context time of this snapshot — lets callers convert the
+     * track-domain playhead into the shared audio clock (M20). */
+    contextTime: number
   } | null
   /** Varispeed (M20, ADR-0014): the playback rate the tempo control
    * set; the transport re-anchors so the playhead stays exact. */
@@ -146,6 +149,11 @@ export type StatsHandler = (stats: {
   underruns: number
   bufferedSeconds: number
   playing: boolean
+  /** Cumulative frames consumed since the last reset, and the
+   * worklet clock at snapshot time — the played-index anchor the
+   * beat clock extrapolates from (M20, ADR-0014). */
+  playedFrames: number
+  contextTime: number
 }) => void
 
 export type AudioEngine = {
@@ -845,6 +853,7 @@ export function createAudioEngine(): AudioEngine {
             // The base rate the tempo control set — a transient nudge
             // bend deliberately doesn't show here.
             rate: trackRate,
+            contextTime: bus.context.currentTime,
           }
         },
         setTrackRate(rate) {

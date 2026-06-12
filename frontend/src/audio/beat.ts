@@ -14,7 +14,14 @@
  * prior. Thresholds are measured, not guessed: see
  * docs/spike-beat-detection.md. */
 
-export type BeatEstimate = { bpm: number; confidence: number }
+export type BeatEstimate = {
+  bpm: number
+  confidence: number
+  /** The pushed-frame index of the most recent beat (M20): a
+   * recency-weighted fold of the onset envelope by the period. Absent
+   * when the fold is incoherent — phase honesty mirrors the gate's. */
+  anchorFrame?: number
+}
 
 export type BeatTracker = {
   /** Feed interleaved stereo float32 — the deck wire format. */
@@ -51,6 +58,9 @@ const MIN_FLUX_VARIANCE = 1e-4
  * integer-lag octave alias. Smoothing spreads each onset across
  * neighbouring hops so half-integer lags still correlate. */
 const SMOOTHING = [0.25, 0.5, 1, 0.5, 0.25]
+/** The anchor fold must concentrate at least this hard before a beat
+ * phase is reported (the meter's honesty floor, M20). */
+const MIN_ANCHOR_RESULTANT = 0.25
 
 function tempoPrior(bpm: number): number {
   const octaves = Math.log2(bpm / PRIOR_CENTER_BPM)
@@ -70,6 +80,9 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
   const hopEnergy = [0, 0, 0]
   let hopFill = 0
   let previousLogEnergy: number[] | null = null
+  // Total flux hops written since reset — maps window indices onto
+  // pushed-frame time for the beat anchor (M20).
+  let hopsPushed = 0
 
   function pushHop() {
     const logEnergy = hopEnergy.map((energy) =>
@@ -83,6 +96,7 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
       flux[head] = rise
       head = (head + 1) % capacity
       filled = Math.min(filled + 1, capacity)
+      hopsPushed += 1
     }
     previousLogEnergy = logEnergy
   }
@@ -189,7 +203,32 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
           : Math.max(-0.5, Math.min(0.5, (0.5 * (alpha - gamma)) / denominator))
       const bpm = 60 / ((bestLag + shift) * hopSeconds)
       const confidence = Math.max(0, Math.min(1, beta))
-      return { bpm, confidence }
+
+      // Beat anchor (M20): fold the window's onset energy by the
+      // period, recency-weighted (half-life ~4 beats) so the phase
+      // tracks where the beat is NOW rather than averaging the whole
+      // window — a coarse period would smear an unweighted fold.
+      const periodHops = bestLag + shift
+      const tau = 4 * periodHops
+      let ax = 0
+      let ay = 0
+      let aw = 0
+      for (let i = 0; i < n; i++) {
+        const weight = x[i] > 0 ? x[i] * Math.exp((i - n) / tau) : 0
+        if (weight === 0) continue
+        const globalHop = hopsPushed - n + i
+        const angle = 2 * Math.PI * ((globalHop / periodHops) % 1)
+        ax += Math.cos(angle) * weight
+        ay += Math.sin(angle) * weight
+        aw += weight
+      }
+      let anchorFrame: number | undefined
+      if (aw > EPS && Math.hypot(ax, ay) / aw >= MIN_ANCHOR_RESULTANT) {
+        const phase = (Math.atan2(ay, ax) / (2 * Math.PI) + 1) % 1
+        const beatsToNow = Math.floor(hopsPushed / periodHops - phase)
+        anchorFrame = (beatsToNow + phase) * periodHops * HOP_FRAMES
+      }
+      return { bpm, confidence, anchorFrame }
     },
 
     reset() {
@@ -202,6 +241,7 @@ export function createBeatTracker(sampleRate: number): BeatTracker {
       hopEnergy[2] = 0
       hopFill = 0
       previousLogEnergy = null
+      hopsPushed = 0
     },
   }
 }

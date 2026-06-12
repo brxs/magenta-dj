@@ -32,6 +32,11 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     leavePlayback: vi.fn(),
     seekTrack: vi.fn(),
     nudgeTrack: vi.fn(),
+    setTrackRate: vi.fn(),
+    nudgeTrackPhase: vi.fn(),
+    syncTrack: vi.fn(() => true),
+    getTrackBeat: vi.fn(() => null),
+    getLiveBeat: vi.fn(() => null),
     getTrackPeaks: vi.fn(() => null),
     trim: { mode: 'auto' as const, db: 0 },
     setTrimDb: vi.fn(),
@@ -231,6 +236,8 @@ describe('applyAppIntent', () => {
         playing,
         ended: false,
         bpm: null,
+        grid: null,
+        rate: 1,
       },
     }
   }

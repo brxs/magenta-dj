@@ -1190,6 +1190,8 @@ describe('DeckColumn playback mode (M19)', () => {
     playing: false,
     ended: false,
     bpm: 132.5,
+    grid: null,
+    rate: 1,
     ...overrides,
   })
 

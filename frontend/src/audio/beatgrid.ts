@@ -131,8 +131,12 @@ export function trackBeatgrid(
   left: Float32Array,
   right: Float32Array,
   sampleRate: number,
+  // The caller usually has the coarse pass already (loadTrack runs
+  // trackBpm for the readout) — accept it so the track is analysed
+  // once, not twice.
+  coarse?: number | null,
 ): Beatgrid | null {
-  const coarseBpm = trackBpm(left, right, sampleRate)
+  const coarseBpm = coarse ?? trackBpm(left, right, sampleRate)
   if (coarseBpm === null) return null
   const envelope = onsetEnvelope(left, right)
   const onsets = pickOnsets(envelope)

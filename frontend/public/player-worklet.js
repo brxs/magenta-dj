@@ -10,7 +10,8 @@ import {
 // the main thread and plays them, counting underrun events. Playback starts
 // (and restarts after an underrun) only once PREBUFFER_SECONDS of audio is
 // queued, so one slow chunk causes a single counted gap instead of a crackle
-// storm. Posts {underruns, bufferedSeconds, playing} stats every second.
+// storm. Posts {underruns, bufferedSeconds, playing, playedFrames, contextTime}
+// stats every second.
 // The ring doubles as the freeze-pad capture source (ADR-0009): frames
 // behind the read position are recently played audio, answered on demand.
 //
@@ -34,6 +35,11 @@ class PCMPlayer extends AudioWorkletProcessor {
     this.started = false;
     this.underruns = 0;
     this.framesSinceStats = 0;
+    // Cumulative frames consumed since the last reset — the played
+    // index the beat clock maps wire time onto (M20, ADR-0014). Lives
+    // here because the consumer owns the truth, and resets exactly
+    // where the ring resets.
+    this.consumedFrames = 0;
     this.capture = createCaptureState();
     this.port.onmessage = (event) => {
       const message = event.data;
@@ -48,6 +54,7 @@ class PCMPlayer extends AudioWorkletProcessor {
         this.writePos = 0;
         this.available = 0;
         this.started = false;
+        this.consumedFrames = 0;
         this.capture = createCaptureState();
         this.postStats();
       } else if (message.type === 'capture') {
@@ -83,6 +90,10 @@ class PCMPlayer extends AudioWorkletProcessor {
       underruns: this.underruns,
       bufferedSeconds: this.available / sampleRate,
       playing: this.started,
+      playedFrames: this.consumedFrames,
+      // The worklet's own clock at snapshot time, so the main thread
+      // extrapolates the played index in the audio clock domain.
+      contextTime: currentTime,
     });
   }
 
@@ -101,6 +112,7 @@ class PCMPlayer extends AudioWorkletProcessor {
         this.readPos = (this.readPos + 1) % this.capacity;
       }
       this.available -= frames;
+      this.consumedFrames += frames;
       noteConsumed(this.capture, frames, this.available, this.capacity);
     } else if (this.started) {
       this.underruns += 1;
