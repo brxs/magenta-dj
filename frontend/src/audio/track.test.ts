@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BEND_CATCH_UP_SECONDS,
   bendConsumed,
   bendPlan,
   clampOffset,
   clampRate,
+  MAX_BEND_FRACTION,
   NUDGE_BEND_FRACTION,
   phaseOffsetBeats,
   positionAt,
@@ -66,31 +68,44 @@ describe('clampRate', () => {
 })
 
 describe('bend arithmetic', () => {
-  it('plans a forward slip as a faster bend held long enough', () => {
-    const plan = bendPlan(0.05, 1)
+  it('plans a single-tick slip at the gentle minimum bend', () => {
+    const plan = bendPlan(0.01, 1)
     expect(plan.rate).toBeCloseTo(1 + NUDGE_BEND_FRACTION)
-    // 50ms of slip at a 5% bend takes one second.
-    expect(plan.durationSeconds).toBeCloseTo(1)
+    // 10ms of slip at a 5% bend takes 200ms.
+    expect(plan.durationSeconds).toBeCloseTo(0.2)
   })
 
   it('plans a backward slip as a slower bend', () => {
-    const plan = bendPlan(-0.025, 1)
+    const plan = bendPlan(-0.01, 1)
     expect(plan.rate).toBeCloseTo(1 - NUDGE_BEND_FRACTION)
-    expect(plan.durationSeconds).toBeCloseTo(0.5)
+    expect(plan.durationSeconds).toBeCloseTo(0.2)
+  })
+
+  it('steepens with the backlog so catch-up time stays bounded', () => {
+    // 100ms of slip would crawl for 2s at the minimum bend; instead
+    // the bend scales to clear it in the catch-up target.
+    const moderate = bendPlan(0.1, 1)
+    expect(moderate.rate).toBeCloseTo(1.4)
+    expect(moderate.durationSeconds).toBeCloseTo(BEND_CATCH_UP_SECONDS)
+    // A spin's backlog hits the steepness cap and takes longer, but
+    // never the 20s a fixed 5% would have spent on a 1s slip.
+    const spin = bendPlan(1, 1)
+    expect(spin.rate).toBeCloseTo(1 + MAX_BEND_FRACTION)
+    expect(spin.durationSeconds).toBeCloseTo(2)
   })
 
   it('scales the bend with the base rate so slip stays exact under varispeed', () => {
-    const plan = bendPlan(0.05, 1.08)
+    const plan = bendPlan(0.01, 1.08)
     expect(plan.rate).toBeCloseTo(1.08 * (1 + NUDGE_BEND_FRACTION))
-    expect(plan.durationSeconds).toBeCloseTo(0.05 / (1.08 * NUDGE_BEND_FRACTION))
+    expect(plan.durationSeconds).toBeCloseTo(0.01 / (1.08 * NUDGE_BEND_FRACTION))
   })
 
   it('settles what an interrupted bend already consumed', () => {
-    const plan = bendPlan(0.05, 1)
+    const plan = bendPlan(0.01, 1)
     // Half the duration in: half the slip is consumed.
     expect(
       bendConsumed(plan.durationSeconds / 2, 1, plan.rate),
-    ).toBeCloseTo(0.025)
+    ).toBeCloseTo(0.005)
   })
 })
 

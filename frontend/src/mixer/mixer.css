@@ -90,3 +90,15 @@
 .beatview {
   gap: var(--space-2);
 }
+
+/* Vertical layout: the two strips sit side by side, time running
+   downward; the panel label keeps its own row. */
+.beatview--vertical {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: center;
+}
+
+.beatview--vertical .ui-panel__label {
+  grid-column: 1 / -1;
+}

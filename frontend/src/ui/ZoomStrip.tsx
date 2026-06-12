@@ -26,6 +26,9 @@ type ZoomStripSource = {
 type ZoomStripProps = {
   label: string
   accent: 'a' | 'b'
+  /** Time runs downward instead of rightward (the Serato vertical
+   * waveform convention) — same drawing, transposed onto the canvas. */
+  vertical?: boolean
   /** Polled per frame; null draws an empty (dimmed) strip — a deck
    * with nothing honest to show shows nothing (M22). */
   getSource: () => ZoomStripSource | null
@@ -35,7 +38,7 @@ type ZoomStripProps = {
  * highs as colour, the playhead fixed mid-strip, beat marks from the
  * deck's M20 clock where confident. Canvas-rendered per frame; React
  * never sees the scroll. */
-export function ZoomStrip({ label, accent, getSource }: ZoomStripProps) {
+export function ZoomStrip({ label, accent, vertical, getSource }: ZoomStripProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -59,7 +62,11 @@ export function ZoomStrip({ label, accent, getSource }: ZoomStripProps) {
     let frame = 0
     const draw = () => {
       frame = requestAnimationFrame(draw)
-      context.clearRect(0, 0, WIDTH, HEIGHT)
+      context.setTransform(1, 0, 0, 1, 0, 0)
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      // Vertical strips transpose the same drawing: the horizontal
+      // time axis maps downward, amplitude maps across.
+      if (vertical) context.setTransform(0, 1, 1, 0, 0, 0)
       const source = getSource()
       if (!source) return
       const hops = Math.min(
@@ -116,14 +123,14 @@ export function ZoomStrip({ label, accent, getSource }: ZoomStripProps) {
     }
     frame = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(frame)
-  }, [getSource, accent])
+  }, [getSource, accent, vertical])
 
   return (
     <canvas
       ref={canvasRef}
-      className="ui-zoomstrip"
-      width={WIDTH}
-      height={HEIGHT}
+      className={`ui-zoomstrip${vertical ? ' ui-zoomstrip--vertical' : ''}`}
+      width={vertical ? HEIGHT : WIDTH}
+      height={vertical ? WIDTH : HEIGHT}
       role="img"
       aria-label={label}
     />

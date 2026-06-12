@@ -392,7 +392,7 @@ function App() {
           <Select
             label={t('beatview.layout')}
             value={beatView}
-            options={(['center', 'top', 'off'] as const).map((layout) => ({
+            options={(['center', 'vertical', 'top', 'off'] as const).map((layout) => ({
               value: layout,
               label: t(`beatview.layouts.${layout}`),
             }))}
@@ -416,7 +416,6 @@ function App() {
         <DeckColumn
           deckId="a"
           state={deckA.state}
-          getWaveformRange={deckA.getChannelWaveformRange}
           onPlay={() => void deckA.play()}
           onStop={deckA.stop}
           onSetStyle={deckA.setStyle}
@@ -446,8 +445,9 @@ function App() {
           getTrackPeaks={deckA.getTrackPeaks}
         />
         <div className="app__center">
-          {beatView === 'center' && (
+          {(beatView === 'center' || beatView === 'vertical') && (
             <BeatView
+              vertical={beatView === 'vertical'}
               getSourceA={deckA.getZoomSource}
               getSourceB={deckB.getZoomSource}
             />
@@ -466,7 +466,6 @@ function App() {
         <DeckColumn
           deckId="b"
           state={deckB.state}
-          getWaveformRange={deckB.getChannelWaveformRange}
           onPlay={() => void deckB.play()}
           onStop={deckB.stop}
           onSetStyle={deckB.setStyle}

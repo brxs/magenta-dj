@@ -20,7 +20,7 @@
 import { EQ_BANDS, EQ_FILTERS, eqValueToDb, type EqBand } from './eq'
 import { fxBlend, isFxActive, type FxKind } from './fx'
 import { buildFxGraph, type FxGraph } from './fxGraphs'
-import { rangeFromBytes, rmsFromBytes } from './levels'
+import { rmsFromBytes } from './levels'
 import {
   buildLoopChannel,
   LOOP_CROSSFADE_SECONDS,
@@ -43,6 +43,7 @@ import {
   bendPlan,
   clampOffset,
   clampRate,
+  MAX_PENDING_SLIP_SECONDS,
   positionAt,
   trackPeaks,
   type TrackTransport,
@@ -141,8 +142,6 @@ export type DeckChannel = {
   unloadTrack: () => void
   /** Post-fader RMS level, 0..~1 (for channel meters). */
   getLevel: () => number
-  /** Min/max of the latest audio window, -1..1 (for waveform strips). */
-  getWaveformRange: () => [number, number]
   dispose: () => void
 }
 
@@ -883,7 +882,12 @@ export function createAudioEngine(): AudioEngine {
         },
         nudgeTrackPhase(seconds) {
           if (trackTransport.state !== 'playing') return
-          pendingSlip += seconds
+          // The backlog caps: a hard spin should answer now, not keep
+          // bending for seconds after the hand leaves the platter.
+          pendingSlip = Math.min(
+            MAX_PENDING_SLIP_SECONDS,
+            Math.max(-MAX_PENDING_SLIP_SECONDS, pendingSlip + seconds),
+          )
           applyBend()
         },
         getTrackPeaks(buckets) {
@@ -902,10 +906,6 @@ export function createAudioEngine(): AudioEngine {
         },
         getLevel() {
           return rmsLevel(analyser, analyserBuffer)
-        },
-        getWaveformRange() {
-          analyser.getByteTimeDomainData(analyserBuffer)
-          return rangeFromBytes(analyserBuffer)
         },
         dispose() {
           worklet.port.onmessage = null

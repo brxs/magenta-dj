@@ -37,7 +37,6 @@ function renderPanel(
       <DeckColumn
         deckId="a"
         state={{ ...initialDeckState, ...state }}
-        getWaveformRange={() => [0, 0]}
         onPlay={handlers.onPlay ?? noop}
         onStop={handlers.onStop ?? noop}
         onSetStyle={(handlers.onSetStyle as (s: object) => void) ?? noop}
@@ -266,7 +265,6 @@ describe('DeckColumn', () => {
         <DeckColumn
           deckId="a"
           state={{ ...initialDeckState, connection: 'open', switchingModel: true }}
-          getWaveformRange={() => [0, 0]}
           onPlay={noop}
           onStop={noop}
           onSetStyle={onSetStyle as (s: object) => void}
@@ -736,7 +734,6 @@ describe('DeckColumn', () => {
               connection: 'open',
               activeStyle: { prompts: [{ text: 'x', weight: 1 }] },
             }}
-            getWaveformRange={() => [0, 0]}
             onPlay={noop}
             onStop={noop}
             onSetStyle={onSetStyle as (s: object) => void}
@@ -845,7 +842,6 @@ describe('DeckColumn', () => {
         <DeckColumn
           deckId="a"
           state={{ ...initialDeckState, connection: 'open', workerDied: true }}
-          getWaveformRange={() => [0, 0]}
           onPlay={noop}
           onStop={noop}
           onSetStyle={noop as (s: object) => void}

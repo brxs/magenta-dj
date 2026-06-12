@@ -203,7 +203,6 @@ export type DeckControls = {
   setVolume: (volume: number) => void
   setEqBand: (band: EqBand, value: number) => void
   getChannelLevel: () => number
-  getChannelWaveformRange: () => [number, number]
 }
 
 /** Owns one deck's WebSocket and its channel on the shared audio engine
@@ -854,11 +853,6 @@ export function useDeck(deckId: DeckId): DeckControls {
     [],
   )
 
-  const getChannelWaveformRange = useCallback(
-    (): [number, number] => channelRef.current?.getWaveformRange() ?? [0, 0],
-    [],
-  )
-
   const captureStyleSample = useCallback(
     () =>
       // The worklet history holds the dead stream in playback mode;
@@ -1145,6 +1139,5 @@ export function useDeck(deckId: DeckId): DeckControls {
     setVolume,
     setEqBand,
     getChannelLevel,
-    getChannelWaveformRange,
   }
 }

@@ -28,10 +28,15 @@ orientation no script can judge (ADR-0014).
 
 ## The audible lock (the exit criterion)
 
-- [ ] With tempos matched, ride the **jog while playing**: each tick
-      audibly drags/pushes the phase (~10 ms), the music bends — no
-      clicks, no jumps. Judge the feel; note a better
-      `JOG_NUDGE_SECONDS` if 10 ms is too fine or too coarse.
+- [ ] With tempos matched, ride the **jog while playing**: a slow
+      turn bends gently (~10 ms/tick), a faster turn bends audibly
+      harder and settles within a beat or two of letting go — no
+      clicks, no jumps. (The third device run found the old fixed 5 %
+      bend consumed slip far slower than the platter piled it up —
+      "the jog doesn't move anything"; the bend now steepens with the
+      backlog and the backlog caps at 1 s.) Judge the feel; note
+      better values for `JOG_NUDGE_SECONDS` / `BEND_CATCH_UP_SECONDS`
+      if it drags or snatches.
 - [ ] **SHIFT + jog scrubs** while playing (the CDJ search
       convention; the second device run found the firmware sends
       SHIFT+jog on its own CC `0x29`, now mapped). Plain jog on a

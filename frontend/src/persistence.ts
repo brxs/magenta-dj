@@ -23,9 +23,10 @@ export type DeckSettings = {
   trim: { mode: 'auto' | 'manual'; db: number }
 }
 
-/** Where the beat view lives (M22): centre stacked, full-width top
- * bar, or off (the per-deck strips stay the minimal mode). */
-export type BeatViewLayout = 'center' | 'top' | 'off'
+/** Where the beat view lives (M22): centre stacked, centre vertical
+ * (time runs downward, the Serato convention), full-width top bar,
+ * or off. */
+export type BeatViewLayout = 'center' | 'vertical' | 'top' | 'off'
 
 export type AppSettings = {
   crossfade: number
@@ -147,6 +148,7 @@ export function loadAppSettings(): Partial<AppSettings> {
   }
   if (
     stored.beatView === 'center' ||
+    stored.beatView === 'vertical' ||
     stored.beatView === 'top' ||
     stored.beatView === 'off'
   ) {

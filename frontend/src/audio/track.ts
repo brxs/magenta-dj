@@ -32,22 +32,42 @@ export function clampRate(rate: number): number {
   return Math.min(Math.max(rate, 1 - TRACK_RATE_RANGE), 1 + TRACK_RATE_RANGE)
 }
 
-/** The phase nudge's bend strength: how far the rate steps while a
- * nudge is slipping (ADR-0014 — the platter-drag metaphor). */
+/** The phase nudge's minimum bend strength: a single tick stays this
+ * gentle (ADR-0014 — the platter-drag metaphor). */
 export const NUDGE_BEND_FRACTION = 0.05
+/** The steepest bend a backlog may demand — beyond this the slip
+ * queue caps instead (MAX_PENDING_SLIP_SECONDS). */
+export const MAX_BEND_FRACTION = 0.5
+/** Slip beyond what the minimum bend clears in this time bends
+ * steeper, so a platter turn answers in bounded time. At a fixed 5 %
+ * the jog consumed 50 ms of slip per real second — a spin piled up
+ * seconds of backlog and read as "the jog doesn't move anything"
+ * (second device run). */
+export const BEND_CATCH_UP_SECONDS = 0.25
+/** The deepest slip backlog worth keeping: a platter is a phase
+ * tool, not a seek — drop what a release would spend seconds
+ * grinding through. */
+export const MAX_PENDING_SLIP_SECONDS = 1
 
 /** Plan a stepped bend that slips `slipSeconds` of phase: the bent
  * rate to hold and for how long. Positive slip pushes the playhead
- * ahead (briefly faster), negative drags it back. */
+ * ahead (briefly faster), negative drags it back. The bend steepens
+ * with the backlog so catch-up time stays bounded. */
 export function bendPlan(
   slipSeconds: number,
   baseRate: number,
 ): { rate: number; durationSeconds: number } {
   const direction = slipSeconds >= 0 ? 1 : -1
+  const fraction = Math.min(
+    MAX_BEND_FRACTION,
+    Math.max(
+      NUDGE_BEND_FRACTION,
+      Math.abs(slipSeconds) / (baseRate * BEND_CATCH_UP_SECONDS),
+    ),
+  )
   return {
-    rate: baseRate * (1 + direction * NUDGE_BEND_FRACTION),
-    durationSeconds:
-      Math.abs(slipSeconds) / (baseRate * NUDGE_BEND_FRACTION),
+    rate: baseRate * (1 + direction * fraction),
+    durationSeconds: Math.abs(slipSeconds) / (baseRate * fraction),
   }
 }
 

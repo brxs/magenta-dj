@@ -94,7 +94,6 @@
   },
   "deck": {
     "title": "Deck {{id}}",
-    "waveform": "Deck {{id}} signal",
     "model": {
       "label": "Model"
     },
@@ -202,6 +201,7 @@
     "layout": "Beat view",
     "layouts": {
       "center": "Center",
+      "vertical": "Vertical",
       "top": "Top bar",
       "off": "Off"
     }

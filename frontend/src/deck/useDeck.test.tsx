@@ -94,7 +94,6 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     getTrackPeaks: vi.fn(() => null),
     unloadTrack: vi.fn(),
     getLevel: vi.fn(() => 0),
-    getWaveformRange: vi.fn(() => [0, 0] as [number, number]),
     dispose: vi.fn(),
   }
   const engine: AudioEngine = {

@@ -105,6 +105,8 @@ describe('persistence', () => {
   it('round-trips the beat view layout and drops garbage (M22)', () => {
     updateAppSettings({ beatView: 'top' })
     expect(loadAppSettings().beatView).toBe('top')
+    updateAppSettings({ beatView: 'vertical' })
+    expect(loadAppSettings().beatView).toBe('vertical')
     updateAppSettings({ beatView: 'sideways' as never })
     expect(loadAppSettings().beatView).toBeUndefined()
   })

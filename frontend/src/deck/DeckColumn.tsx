@@ -14,7 +14,6 @@ import { Stat } from '../ui/Stat'
 import { TextField } from '../ui/TextField'
 import { TrackOverview, TRACK_OVERVIEW_BUCKETS } from '../ui/TrackOverview'
 import { TransportButton } from '../ui/TransportButton'
-import { WaveformStrip } from '../ui/WaveformStrip'
 import { XYPad } from '../ui/XYPad'
 import { isDeckOperable, type ActiveStyle, type DeckState } from './deckState'
 import { TRACK_RATE_RANGE } from '../audio/track'
@@ -82,7 +81,6 @@ function formatTrackTime(seconds: number): string {
 type DeckColumnProps = {
   deckId: DeckId
   state: DeckState
-  getWaveformRange: () => [number, number]
   onPlay: () => void
   onStop: () => void
   onSetStyle: (style: ActiveStyle) => void
@@ -135,7 +133,6 @@ type DeckColumnProps = {
 export function DeckColumn({
   deckId,
   state,
-  getWaveformRange,
   onPlay,
   onStop,
   onSetStyle,
@@ -503,12 +500,6 @@ export function DeckColumn({
       className={`deck deck--${deckId}`}
       aria-label={t('deck.title', { id: deckId })}
     >
-      <WaveformStrip
-        label={t('deck.waveform', { id: deckId })}
-        getRange={getWaveformRange}
-        traceToken={`--color-deck-${deckId}`}
-      />
-
       <header className="deck__header">
         <h2 className="deck__title">{t('deck.title', { id: deckId })}</h2>
         <span

@@ -57,7 +57,6 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     setVolume: vi.fn(),
     setEqBand: vi.fn(),
     getChannelLevel: () => 0,
-    getChannelWaveformRange: () => [0, 0],
   }
 }
 
