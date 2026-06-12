@@ -1,6 +1,6 @@
 # 0013. Playback decks play decoded tracks; loading decides the mode
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-06-12
 - **Deciders:** Daniel Peter
 

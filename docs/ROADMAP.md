@@ -772,7 +772,27 @@ seams unit-tested.
 
 ## M19 — Track deck: trade the stream for a composed track
 
-**Status: ⬜ planned.**
+**Status: ✅ done (2026-06-12).** Shipped on ADR-0013's architecture,
+reshaped mid-flight from the sketch below: instead of a per-deck pane
+swap, a **Media Explorer** below the booth owns all loading (crates
+folded in, Generate with all four models, a session-only folder
+browser), and *loading decides the mode* — a crate puts the deck in
+realtime, a track in playback, the live stream is itself loadable and
+the deck carries its own Back-to-live. Playback is a buffer source at
+the channel head, not the ring feed the sketch leaned to: transport,
+seeking (overview click and jog wheel at 0.5 s/tick), and the offline
+BPM pass came out simpler for it, and a rolling deck keeps rolling
+across every mode switch. Measured on this machine (Apple M5, 16 GB):
+SA3 medium composes a 2-minute track in **14.9 s wall at 4.9 GB peak**
+(the published M4-Pro reference held); the 5.9 GB weight download
+moved into `just setup` after it burned a request deadline. Exit
+criteria verified live (`verify_m19.mjs`, in `just verify-ui`): a
+track composed while deck A streamed at zero underruns, the load
+handed over without a pause, seeks landed exactly, and the live
+stream returned without a reload — and on the device against
+[`m19-hardware-checklist.md`](m19-hardware-checklist.md): FLX4
+transport, jog seeking, rotary tab-cycling and crate quick-load, the
+track a full citizen of the mix.
 
 **Goal:** a deck can trade its live stream for a finished track.
 Stable Audio 3 Medium (1.4B, open weights) composes up to 6:20 from a
