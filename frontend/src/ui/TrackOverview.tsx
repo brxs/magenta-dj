@@ -66,8 +66,8 @@ export function TrackOverview({
     // ticks step up to downbeats, then bars-of-4, until they fit.
     if (grid && duration > 0) {
       const tick =
-        getComputedStyle(canvas).getPropertyValue('--color-text-muted').trim() ||
-        '#888888'
+        getComputedStyle(canvas).getPropertyValue('--color-wave-beat').trim() ||
+        '#ff4757'
       context.fillStyle = tick
       const period = 60 / grid.bpm
       const pxPerBeat = (period / duration) * WIDTH
@@ -78,7 +78,7 @@ export function TrackOverview({
         if (beat % stride !== 0) continue
         const x = Math.round((t / duration) * WIDTH)
         const heavy = beat % (stride * 4) === 0
-        context.fillRect(x, 0, 1, heavy ? 12 : 6)
+        context.fillRect(x, 0, heavy ? 2 : 1, heavy ? 14 : 7)
       }
     }
   }, [peaks, accent, grid, duration])

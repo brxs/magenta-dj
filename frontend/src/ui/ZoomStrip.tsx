@@ -48,7 +48,7 @@ export function ZoomStrip({ label, accent, getSource }: ZoomStripProps) {
     const low = colour('--color-wave-low', '#3d6fe0')
     const mid = colour('--color-wave-mid', '#e0a33c')
     const high = colour('--color-wave-high', '#e8edf2')
-    const marks = colour('--color-text-muted', '#888888')
+    const marks = colour('--color-wave-beat', '#ff4757')
     const playhead = colour(`--color-deck-${accent}`, '#ffffff')
     const scratch = {
       low: new Float32Array(MAX_HOPS),
@@ -103,8 +103,10 @@ export function ZoomStrip({ label, accent, getSource }: ZoomStripProps) {
           if (hop >= fromHop + hops) break
           const x = (hop - fromHop) * pxPerHop
           const heavy = ((k % 4) + 4) % 4 === 0
-          context.globalAlpha = heavy ? 0.9 : 0.45
-          context.fillRect(Math.round(x), 0, heavy ? 2 : 1, HEIGHT)
+          // Grid-red over the band colours; the muted gray that
+          // shipped first was invisible on the device.
+          context.globalAlpha = heavy ? 1 : 0.7
+          context.fillRect(Math.round(x), 0, heavy ? 3 : 2, HEIGHT)
         }
         context.globalAlpha = 1
       }

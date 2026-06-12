@@ -65,9 +65,15 @@ export function isPadModeSwitch(data: ArrayLike<number>): boolean {
 
 const CC_DECK: Partial<Record<number, DeckId>> = { 0xb0: 'a', 0xb1: 'b' }
 const MIXER_STATUS = 0xb6
-/** Jog wheel turn CCs (platter touched / rim), relative around 0x40 —
- * the Pioneer scheme per the Mixxx chart; confirm with the monitor. */
-const JOG_CCS = [0x21, 0x22]
+/** Jog wheel turn CCs, relative around 0x40 — the Pioneer scheme per
+ * the Mixxx FLX4 chart: 0x21 side, 0x22 platter (vinyl on), 0x23
+ * platter (vinyl off). */
+const JOG_CCS = [0x21, 0x22, 0x23]
+/** SHIFT + jog arrives on its OWN CC (jogSearch in the Mixxx FLX4
+ * chart), not as a soft-shifted 0x21/0x22 — the same firmware habit as
+ * the SHIFT pad layer. The shiftHeld assumption shipped first and read
+ * as "scrubbing does nothing" on the device. */
+const JOG_SCRUB_CC = 0x29
 const LSB_OFFSET = 0x20
 const MAX_14BIT = (127 << 7) | 127
 /** Browse rotary (M16): a RELATIVE encoder on the mixer status — small
@@ -222,16 +228,16 @@ export function createFlx4Translator(): Flx4Translator {
     // Only a playback deck acts on them (App-side); the live stream
     // still has no scratch concept (ADR-0004).
     const jogDeck = CC_DECK[status]
-    if (jogDeck && JOG_CCS.includes(number)) {
+    if (jogDeck && (JOG_CCS.includes(number) || number === JOG_SCRUB_CC)) {
       if (value === 0x40) return null
       return {
         kind: 'track_seek',
         deck: jogDeck,
         steps: value - 0x40,
-        // SHIFT+jog scrubs even mid-play (the CDJ search convention,
-        // measured want on the device: a plain playing jog is a
-        // phase nudge and reads as "scrubbing stopped working").
-        shifted: shiftHeld[jogDeck],
+        // SHIFT+jog scrubs even mid-play (the CDJ search convention).
+        // The firmware moves it to JOG_SCRUB_CC; shiftHeld stays as a
+        // fallback for plain-CC firmware.
+        shifted: number === JOG_SCRUB_CC || shiftHeld[jogDeck],
       }
     }
 

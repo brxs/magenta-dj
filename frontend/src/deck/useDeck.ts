@@ -409,7 +409,7 @@ export function useDeck(deckId: DeckId): DeckControls {
       channelRef.current = null
       channelPromiseRef.current = null
     }
-  }, [deckId, beat, loudness, resetStreamMeasurements])
+  }, [deckId, beat, loudness, bandScroller, resetStreamMeasurements])
 
   // One estimate per second through the honesty gate (M14); the state
   // setter is a no-op re-render-wise while the gated value holds. The
@@ -658,7 +658,7 @@ export function useDeck(deckId: DeckId): DeckControls {
       })
       return true
     },
-    [ensureChannel, engine, stop, setMode, state.playing],
+    [ensureChannel, engine, stop, setMode, state.playing, deckId],
   )
 
   const leavePlayback = useCallback(() => {

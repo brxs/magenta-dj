@@ -70,7 +70,8 @@ remains the verification tool.
 
 | Control | Message | → App intent |
 | ------- | ------- | ------------ |
-| Jog wheel (turn) deck 1 / 2 | `0xB0`/`0xB1` CC `0x21` (platter) / `0x22` (rim), relative around `0x40` (`0x41` = +1 CW) | the platter's dual role on a playback deck: paused = relative seek, playing = phase nudge, and **SHIFT + jog scrubs regardless** (the CDJ search convention — added after a device run where the nudge read as "scrubbing stopped working"); a realtime deck ignores the ticks — no scratch concept on the stream (ADR-0004) |
+| Jog wheel (turn) deck 1 / 2 | `0xB0`/`0xB1` CC `0x21` (side) / `0x22` (platter, vinyl on) / `0x23` (platter, vinyl off), relative around `0x40` (`0x41` = +1 CW) | the platter's dual role on a playback deck: paused = fine relative seek, playing = phase nudge; a realtime deck ignores the ticks — no scratch concept on the stream (ADR-0004) |
+| SHIFT + jog (turn) deck 1 / 2 | `0xB0`/`0xB1` CC `0x29` (`jogSearch` in the Mixxx FLX4 chart), relative around `0x40` | fast scrub even mid-play (the CDJ search convention). The firmware moves the shifted jog to its **own CC** — the software soft-shift on `0x21`/`0x22` shipped first and read as "scrubbing does nothing" on the device |
 | Tempo slider deck 1 / 2 | `0xB0`/`0xB1` CC `0x00` (LSB `0x20`) | varispeed on a playback deck (`track_rate`, M20, ADR-0014 — playback rate is not generation tempo, so ADR-0004 stands); realtime decks ignore it. Orientation **measured on the device**: low values = slow end (the chart assumption shipped inverted and was caught on hardware) |
 
 Reinterpreted, no new bytes: on a deck in playback mode the existing

@@ -324,6 +324,8 @@ describe('createFlx4Translator', () => {
       [0xb1, 0x21, 'b'],
       [0xb0, 0x22, 'a'],
       [0xb1, 0x22, 'b'],
+      [0xb0, 0x23, 'a'],
+      [0xb1, 0x23, 'b'],
     ] as const)(
       'jog turn (status 0x%s CC 0x%s) seeks deck %s relatively',
       (status, cc, deck) => {
@@ -362,6 +364,24 @@ describe('createFlx4Translator', () => {
           deck,
           value: ((0x40 << 7) | 0x10) / 16383,
         })
+      },
+    )
+
+    it.each([
+      [0xb0, 'a'],
+      [0xb1, 'b'],
+    ] as const)(
+      'SHIFT+jog arrives on its own CC 0x29 and marks the tick shifted',
+      (status, deck) => {
+        const translate = createFlx4Translator()
+        // No SHIFT note seen — the firmware encodes shift in the CC.
+        expect(translate([status, 0x29, 0x42])).toEqual({
+          kind: 'track_seek',
+          deck,
+          steps: 2,
+          shifted: true,
+        })
+        expect(translate([status, 0x29, 0x40])).toBeNull()
       },
     )
 

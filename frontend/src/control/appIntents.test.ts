@@ -5,6 +5,7 @@ import type { DeckControls } from '../deck/useDeck'
 import {
   applyAppIntent,
   JOG_NUDGE_SECONDS,
+  JOG_SCRUB_SECONDS,
   JOG_SEEK_SECONDS,
 } from './appIntents'
 
@@ -290,14 +291,14 @@ describe('applyAppIntent', () => {
     expect(deck.nudgeTrack).not.toHaveBeenCalled()
   })
 
-  it('SHIFT+jog scrubs even while playing — the CDJ search convention', () => {
+  it('SHIFT+jog fast-scrubs even while playing — the CDJ search convention', () => {
     const deck = playbackDeck(true)
     applyAppIntent(
       { kind: 'track_seek', deck: 'a', steps: 3, shifted: true },
       decks(deck),
       noHandlers,
     )
-    expect(deck.nudgeTrack).toHaveBeenCalledWith(3 * JOG_SEEK_SECONDS)
+    expect(deck.nudgeTrack).toHaveBeenCalledWith(3 * JOG_SCRUB_SECONDS)
     expect(deck.nudgeTrackPhase).not.toHaveBeenCalled()
   })
 

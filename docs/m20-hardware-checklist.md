@@ -33,8 +33,11 @@ orientation no script can judge (ADR-0014).
       clicks, no jumps. Judge the feel; note a better
       `JOG_NUDGE_SECONDS` if 10 ms is too fine or too coarse.
 - [ ] **SHIFT + jog scrubs** while playing (the CDJ search
-      convention, added after the first device run); plain jog on a
-      paused track still seeks.
+      convention; the second device run found the firmware sends
+      SHIFT+jog on its own CC `0x29`, now mapped). Plain jog on a
+      paused track seeks *finely* (0.05 s/tick — 0.5 read as "way too
+      sensitive"); note better values for `JOG_SEEK_SECONDS` /
+      `JOG_SCRUB_SECONDS` if the feel is off.
 - [ ] Nudge until the kicks coincide: the **phase meter** needle sits
       centre when your ears say locked — the meter must agree with
       the room, not the wire (the buffer-lead correction, ADR-0014).
@@ -42,7 +45,9 @@ orientation no script can judge (ADR-0014).
       statusbar — M22, pulled forward) shows both close-ups scrolling
       with the audio, kicks blue-heavy and hats bright; when locked,
       the beat marks of both strips visually coincide and the live
-      strip's marks land on its audible kicks.
+      strip's marks land on its audible kicks. The marks are grid-red
+      now (the muted gray of the first cut was "barely visible" on
+      the device).
 - [ ] The lock holds for **a minute** by ear with the meter steady;
       small drift corrects with single jog ticks.
 - [ ] Pause deck B: the meter goes dark (no track clock); the jog

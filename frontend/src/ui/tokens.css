@@ -26,10 +26,12 @@
   --color-accent: #e91e8c;
   --color-accent-strong: #ff4dac;
 
-  /* Band-coloured waveforms (M22): lows / mids / highs */
+  /* Band-coloured waveforms (M22): lows / mids / highs, plus the
+     beatgrid mark — red so it reads over all three band colours */
   --color-wave-low: #3d6fe0;
   --color-wave-mid: #e0a33c;
   --color-wave-high: #e8edf2;
+  --color-wave-beat: #ff4757;
 
   /* LED states */
   --color-led-ok: #2ecc71;
