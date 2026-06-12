@@ -217,4 +217,40 @@ describe('applyAppIntent', () => {
     expect(a.setStyle).not.toHaveBeenCalled()
     expect(onCrossfade).not.toHaveBeenCalled()
   })
+
+  function playbackDeck(playing: boolean) {
+    return {
+      ...fakeDeck(),
+      mode: 'playback' as const,
+      track: {
+        title: 'Warehouse Anthem',
+        duration: 120,
+        position: 30,
+        playing,
+        ended: false,
+        bpm: null,
+      },
+    }
+  }
+
+  it('play_toggle on a playback deck answers to the track, not the worker', () => {
+    // state.playing is honestly false while the worker is parked; the
+    // pause decision must come from the track (M19, ADR-0013).
+    const playing = playbackDeck(true)
+    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(playing), noHandlers)
+    expect(playing.stop).toHaveBeenCalled()
+    expect(playing.play).not.toHaveBeenCalled()
+
+    const paused = playbackDeck(false)
+    applyAppIntent({ kind: 'play_toggle', deck: 'a' }, decks(paused), noHandlers)
+    expect(paused.play).toHaveBeenCalled()
+    expect(paused.stop).not.toHaveBeenCalled()
+  })
+
+  it('deck_prep on a playback deck returns the track to the top', () => {
+    const playing = playbackDeck(true)
+    applyAppIntent({ kind: 'deck_prep', deck: 'a' }, decks(playing), noHandlers)
+    expect(playing.prime).toHaveBeenCalled()
+    expect(playing.stop).not.toHaveBeenCalled()
+  })
 })

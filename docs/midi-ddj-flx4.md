@@ -60,13 +60,22 @@ remains the verification tool.
 | Pads 1–4, SAMPLER mode, deck 1 / 2 | `0x97`/`0x99` notes `0x30`–`0x33` | freeze-loop slot: empty captures + freezes, filled swaps in, active returns to live; LED lit while filled. Bank base `0x30` confirmed by the 0x10-per-bank scheme |
 | SHIFT + SAMPLER pad, deck 1 / 2 | `0x98`/`0x9A` notes `0x30`–`0x33` | clear the slot. Held SHIFT moves pads onto the shift pad layer — pads are **not** soft-shifted like the CFX knob (found on hardware: the `0x97`/`0x99` soft-shift path never fired). The translator keeps the soft-shift rows as well, in case other firmware keeps the pads put |
 
-## Mapped in M16 (crates)
+## Mapped in M16 (crates), widened in M19 (Media Explorer)
 
 | Control | Message | → App intent |
 | ------- | ------- | ------------ |
-| Browse rotary (turn) | `0xB6` CC `0x40`, relative (small = CW, >`0x40` = CCW two's complement) | move the crate highlight — handled before the 14-bit CC pipeline; confirm direction with the monitor |
-| LOAD deck 1 / 2 | `0x96` notes `0x46`/`0x47` | load the highlighted preset onto that deck |
+| Browse rotary (turn) | `0xB6` CC `0x40`, relative (small = CW, >`0x40` = CCW two's complement) | move the visible Media Explorer tab's highlight (`browse_scroll`) — handled before the 14-bit CC pipeline; confirm direction with the monitor |
+| LOAD deck 1 / 2 | `0x96` notes `0x46`/`0x47` | load the highlighted item onto that deck (`browse_load`): a crate flips the deck to realtime, a track to playback (ADR-0013) |
 | Browse rotary (press) | unmapped | the Mixxx chart defines no press control; nothing to bind |
+
+## Reinterpreted in M19 (playback deck)
+
+No new bytes: on a deck in playback mode the existing transport
+messages drive the track instead of the worker — PLAY/PAUSE
+(`0x90`/`0x91` note `0x0B`) plays/parks the track, transport CUE
+(note `0x0C`) returns it to the top, parked. Everything else on the
+strip (faders, EQ, CFX, pads, headphone cue) is untouched because the
+channel graph is unchanged.
 
 On audio: the FLX4's USB sound card exposes 4 output channels at 48 kHz
 (measured via `system_profiler`) — 1/2 feed the MASTER RCA, 3/4 the

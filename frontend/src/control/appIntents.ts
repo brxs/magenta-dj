@@ -21,6 +21,13 @@ export function applyAppIntent(
   switch (intent.kind) {
     case 'play_toggle': {
       const deck = decks[intent.deck]
+      // A playback deck answers to its track, not the worker — the
+      // worker is parked and state.playing is honestly false (M19).
+      if (deck.mode === 'playback') {
+        if (deck.track?.playing) deck.stop()
+        else void deck.play()
+        return
+      }
       // Same gating as the transport button: hardware must not start a
       // deck the UI would refuse to.
       if (!isDeckOperable(deck.state)) return
@@ -30,6 +37,12 @@ export function applyAppIntent(
     }
     case 'deck_prep': {
       const deck = decks[intent.deck]
+      // CUE on a track returns it to the top, parked (prime carries
+      // the playback-mode semantics, ADR-0013).
+      if (deck.mode === 'playback') {
+        void deck.prime()
+        return
+      }
       if (!isDeckOperable(deck.state)) return
       // CUE on a rolling deck (primed or on air) stops with flush; on a
       // stopped deck it primes — generation audible only over the cue tap.
