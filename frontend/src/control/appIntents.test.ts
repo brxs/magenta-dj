@@ -372,10 +372,8 @@ describe('applyAppIntent', () => {
     const deck = playbackDeck(true)
     applyAppIntent({ kind: 'track_loop_in', deck: 'a' }, decks(deck), noHandlers)
     applyAppIntent({ kind: 'track_loop_out', deck: 'a' }, decks(deck), noHandlers)
-    applyAppIntent({ kind: 'track_loop_exit', deck: 'a' }, decks(deck), noHandlers)
     expect(deck.loopIn).toHaveBeenCalled()
     expect(deck.loopOut).toHaveBeenCalled()
-    expect(deck.loopExit).toHaveBeenCalled()
 
     const live = fakeDeck({ playing: true })
     applyAppIntent({ kind: 'track_loop_in', deck: 'a' }, decks(live), noHandlers)

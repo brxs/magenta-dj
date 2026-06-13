@@ -143,11 +143,6 @@ export function applyAppIntent(
       if (deck.mode === 'playback') deck.loopOut()
       return
     }
-    case 'track_loop_exit': {
-      const deck = decks[intent.deck]
-      if (deck.mode === 'playback') deck.loopExit()
-      return
-    }
     case 'track_beat_loop': {
       const deck = decks[intent.deck]
       if (deck.mode !== 'playback') return

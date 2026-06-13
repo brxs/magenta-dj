@@ -45,11 +45,11 @@ export type ControlIntent =
   // Tempo sliders (M20, ADR-0014): varispeed on a playback deck,
   // ignored on a realtime deck — ADR-0004 still bars generation tempo.
   | { kind: 'track_rate'; deck: DeckId; value: number }
-  // The LOOP section (M21, ADR-0015): in/out/exit on a playback deck;
-  // the track_ prefix keeps them clear of ADR-0009's freeze-loop pads.
+  // The LOOP section (M21, ADR-0015): in/out on a playback deck; the
+  // track_ prefix keeps them clear of ADR-0009's freeze-loop pads.
+  // (Loop release rides the M23 4 BEAT/EXIT toggle, not its own intent.)
   | { kind: 'track_loop_in'; deck: DeckId }
   | { kind: 'track_loop_out'; deck: DeckId }
-  | { kind: 'track_loop_exit'; deck: DeckId }
   // Beat loops (M23, ADR-0016): a one-press beats-long loop, plus halve
   // and double of an active loop. The FLX4's "4 BEAT/EXIT" is a single
   // button, so its intent toggles in dispatch (set when idle, exit when
