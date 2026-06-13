@@ -88,6 +88,8 @@ function makeFakeEngine(overrides: Partial<AudioEngine> = {}) {
     playTrack: vi.fn(() => true),
     pauseTrack: vi.fn(),
     seekTrack: vi.fn(),
+    setTrackLoop: vi.fn(),
+    clearTrackLoop: vi.fn(),
     getTrackStatus: vi.fn(() => null),
     setTrackRate: vi.fn(),
     nudgeTrackPhase: vi.fn(),
@@ -974,6 +976,7 @@ describe('useDeck playback mode (M19)', () => {
       playing: true,
       ended: false,
       rate: 1,
+      loop: null,
       contextTime: 100,
     })
     act(() => void vi.advanceTimersByTime(250))
@@ -1033,6 +1036,7 @@ describe('useDeck playback mode (M19)', () => {
       playing: true,
       ended: false,
       rate: 1,
+      loop: null,
       contextTime: 100,
     })
     act(() => result.current.nudgeTrack(2.5))
@@ -1047,6 +1051,7 @@ describe('useDeck playback mode (M19)', () => {
       playing: true,
       ended: false,
       rate: 1,
+      loop: null,
       contextTime: 100,
     })
     const sentBefore = socket(0).sent.length
@@ -1186,6 +1191,7 @@ describe('useDeck beat clocks (M20)', () => {
       playing: true,
       ended: false,
       rate: 1.05,
+      loop: null,
       contextTime: 200,
     })
     const clock = result.current.getTrackBeat()
@@ -1234,5 +1240,202 @@ describe('useDeck beat clocks (M20)', () => {
       synced = result.current.syncTrack(null)
     })
     expect(synced).toBe('no_tempo')
+  })
+
+  // ── Hot cues and track loops (M21, ADR-0015) ─────────────────────
+
+  async function griddedDeck(position: number) {
+    const { engine, channel } = makeFakeEngine()
+    const { left, right } = clickChannels(120, 24)
+    vi.mocked(channel.loadTrack).mockResolvedValue({
+      duration: 24,
+      sampleRate: 48_000,
+      left,
+      right,
+    })
+    // The engine mock holds a loop like the real boundary would, so
+    // the hook's mirror-from-the-engine path is what's under test.
+    let engineLoop: { start: number; end: number } | null = null
+    vi.mocked(channel.setTrackLoop).mockImplementation((start, end) => {
+      engineLoop = { start, end }
+    })
+    vi.mocked(channel.clearTrackLoop).mockImplementation(() => {
+      engineLoop = null
+    })
+    // The real boundary exits the loop on any seek (ADR-0015).
+    vi.mocked(channel.seekTrack).mockImplementation(() => {
+      engineLoop = null
+    })
+    const status = { position }
+    vi.mocked(channel.getTrackStatus).mockImplementation(() => ({
+      position: status.position,
+      duration: 24,
+      playing: true,
+      ended: false,
+      rate: 1,
+      loop: engineLoop,
+      contextTime: 200,
+    }))
+    const rendered = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(async () => {
+      await rendered.result.current.loadTrack(new ArrayBuffer(8), 'Cueable')
+    })
+    expect(rendered.result.current.track!.grid).not.toBeNull()
+    return { ...rendered, channel, status }
+  }
+
+  it('an empty hot cue pad captures the playhead on the grid; a filled one jumps', async () => {
+    const { result, channel, status } = await griddedDeck(10.1)
+    const grid = result.current.track!.grid!
+    const period = 60 / grid.bpm
+
+    act(() => result.current.hotCuePad(2))
+    const cue = result.current.track!.cues[2]!
+    // Snapped onto the lattice, within half a beat of the press.
+    const phase = ((cue - grid.firstBeatSeconds) / period) % 1
+    expect(Math.min(phase, 1 - phase)).toBeLessThan(1e-6)
+    expect(Math.abs(cue - 10.1)).toBeLessThanOrEqual(period / 2)
+
+    status.position = 20
+    act(() => result.current.hotCuePad(2))
+    expect(channel.seekTrack).toHaveBeenCalledWith(cue)
+    // The jump must not overwrite the slot.
+    expect(result.current.track!.cues[2]).toBe(cue)
+
+    act(() => result.current.clearHotCue(2))
+    expect(result.current.track!.cues[2]).toBeNull()
+  })
+
+  it('the zoom source carries filled hot cues in the playhead’s hop domain (M21)', async () => {
+    const { result } = await griddedDeck(10.1)
+    // Nothing captured yet: the close-up has no cues to draw.
+    expect(result.current.getZoomSource()!.cues).toEqual([])
+
+    act(() => result.current.hotCuePad(2))
+    const cue = result.current.track!.cues[2]!
+    const source = result.current.getZoomSource()!
+    // Only the one filled slot, and in the same hop units as the
+    // playhead — so the strip lines the marker up against the centre.
+    expect(source.cues).toHaveLength(1)
+    expect(source.cues[0] / source.playheadHop).toBeCloseTo(cue / 10.1, 6)
+  })
+
+  it('cue capture runs free without a grid — no fabricated lattice', async () => {
+    const { engine, channel } = makeFakeEngine()
+    vi.mocked(channel.getTrackStatus).mockReturnValue({
+      position: 10.1,
+      duration: 120,
+      playing: true,
+      ended: false,
+      rate: 1,
+      loop: null,
+      contextTime: 200,
+    })
+    const { result } = renderDeck(engine)
+    act(() => socket(0).serverOpen())
+    await act(async () => {
+      await result.current.loadTrack(new ArrayBuffer(8), 'Gridless')
+    })
+    expect(result.current.track!.grid).toBeNull()
+    act(() => result.current.hotCuePad(0))
+    expect(result.current.track!.cues[0]).toBe(10.1)
+  })
+
+  it('IN and OUT close a whole-beat loop on the engine; EXIT releases it', async () => {
+    const { result, channel, status } = await griddedDeck(8.1)
+    const period = 60 / result.current.track!.grid!.bpm
+
+    act(() => result.current.loopIn())
+    const armed = result.current.track!.pendingLoopIn!
+    expect(Math.abs(armed - 8.1)).toBeLessThanOrEqual(period / 2)
+
+    status.position = 10.2
+    act(() => result.current.loopOut())
+    expect(channel.setTrackLoop).toHaveBeenCalled()
+    const loop = result.current.track!.loop!
+    expect(loop.start).toBe(armed)
+    // A whole number of beats — 4 at 120 BPM across ~2.1s.
+    const beats = (loop.end - loop.start) / period
+    expect(Math.abs(beats - Math.round(beats))).toBeLessThan(1e-6)
+    expect(Math.round(beats)).toBe(4)
+    expect(result.current.track!.pendingLoopIn).toBeNull()
+
+    act(() => result.current.loopExit())
+    expect(channel.clearTrackLoop).toHaveBeenCalled()
+    expect(result.current.track!.loop).toBeNull()
+  })
+
+  it('the zoom source carries the active loop region in hop units (M21)', async () => {
+    const { result, status } = await griddedDeck(8.1)
+    // Not looping yet: the close-up has no region to wash.
+    expect(result.current.getZoomSource()!.loop).toBeNull()
+
+    act(() => result.current.loopIn())
+    status.position = 10.2
+    act(() => result.current.loopOut())
+    const loop = result.current.track!.loop!
+    const source = result.current.getZoomSource()!
+    // The region in the playhead's hop units, so the wash and the
+    // entry/exit caps land where the audio actually wraps.
+    expect(source.loop).not.toBeNull()
+    expect(source.loop!.startHop / source.playheadHop).toBeCloseTo(
+      loop.start / 10.2,
+      6,
+    )
+    expect(source.loop!.endHop / source.playheadHop).toBeCloseTo(
+      loop.end / 10.2,
+      6,
+    )
+
+    act(() => result.current.loopExit())
+    expect(result.current.getZoomSource()!.loop).toBeNull()
+  })
+
+  it('OUT with no IN armed is a no-op, and a seek drops loop and pending IN', async () => {
+    const { result, channel, status } = await griddedDeck(8.1)
+    act(() => result.current.loopOut())
+    expect(channel.setTrackLoop).not.toHaveBeenCalled()
+
+    act(() => result.current.loopIn())
+    status.position = 10.2
+    act(() => result.current.loopOut())
+    expect(result.current.track!.loop).not.toBeNull()
+
+    // The engine clears its loop on seek (ADR-0015, mirrored by the
+    // helper's mock); the hook must follow, not show a ghost region.
+    act(() => result.current.loopIn())
+    act(() => result.current.seekTrack(2))
+    expect(result.current.track!.loop).toBeNull()
+    expect(result.current.track!.pendingLoopIn).toBeNull()
+  })
+
+  it('transport CUE drops the loop everywhere — engine, mirror, pending IN', async () => {
+    // CUE's back-to-top is a seek (ADR-0013 + ADR-0015): the loop
+    // must not survive on screen while playback runs linear.
+    const { result, status } = await griddedDeck(8.1)
+    act(() => result.current.loopIn())
+    status.position = 10.2
+    act(() => result.current.loopOut())
+    expect(result.current.track!.loop).not.toBeNull()
+
+    act(() => result.current.loopIn())
+    await act(() => result.current.prime())
+    expect(result.current.track!.loop).toBeNull()
+    expect(result.current.track!.pendingLoopIn).toBeNull()
+  })
+
+  it('the position poll mirrors an engine-side loop drop within a tick', async () => {
+    const { result, channel, status } = await griddedDeck(8.1)
+    act(() => result.current.loopIn())
+    status.position = 10.2
+    act(() => result.current.loopOut())
+    expect(result.current.track!.loop).not.toBeNull()
+
+    // The engine drops the loop behind the hook's back (any internal
+    // seek path); the 250 ms poll must catch up without help.
+    vi.mocked(channel.clearTrackLoop).getMockImplementation()?.()
+    act(() => void vi.advanceTimersByTime(250))
+    expect(result.current.track!.loop).toBeNull()
   })
 })

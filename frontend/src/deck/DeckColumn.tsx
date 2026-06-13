@@ -78,6 +78,18 @@ function formatTrackTime(seconds: number): string {
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
+/** The loop's length in beats — only when the region truly is a whole
+ * number of them (a tail-clamped loop is not "0 beats"; claiming a
+ * count it doesn't have breaks the honesty rule). */
+function wholeBeatLoop(
+  loop: { start: number; end: number },
+  grid: { bpm: number },
+): number | null {
+  const beats = (loop.end - loop.start) / (60 / grid.bpm)
+  const whole = Math.round(beats)
+  return whole >= 1 && Math.abs(beats - whole) < 0.01 ? whole : null
+}
+
 type DeckColumnProps = {
   deckId: DeckId
   state: DeckState
@@ -125,6 +137,13 @@ type DeckColumnProps = {
   onSetTrackRate: (rate: number) => void
   /** SYNC: match the other deck's tempo; refusals name their reason. */
   onSyncTrack: () => SyncResult
+  /** Hot cues and the track loop (M21, ADR-0015): pads mean position
+   * on a playback deck. */
+  onHotCuePad: (index: number) => void
+  onClearHotCue: (index: number) => void
+  onLoopIn: () => void
+  onLoopOut: () => void
+  onLoopExit: () => void
   getTrackPeaks: (
     buckets: number,
   ) => { min: Float32Array; max: Float32Array } | null
@@ -159,6 +178,11 @@ export function DeckColumn({
   onSeekTrack,
   onSetTrackRate,
   onSyncTrack,
+  onHotCuePad,
+  onClearHotCue,
+  onLoopIn,
+  onLoopOut,
+  onLoopExit,
   getTrackPeaks,
 }: DeckColumnProps) {
   const { t } = useTranslation()
@@ -451,8 +475,12 @@ export function DeckColumn({
         applyPreset(intent.preset)
         return
       }
+      // Pads mean position on a playback deck (M21, ADR-0015): the
+      // hot-cue meaning lives in applyAppIntent; without this gate a
+      // pad press would also drive the parked worker's style cursor.
+      if (mode === 'playback') return
       if (!operable || targets.length === 0) return
-      if (intent.kind === 'style_target' && intent.deck === deckId) {
+      if (intent.kind === 'hot_cue_pad' && intent.deck === deckId) {
         const target = targets[intent.index]
         if (!target) return
         const next = { x: target.x, y: target.y }
@@ -534,7 +562,7 @@ export function DeckColumn({
             peaks={trackPeaksData}
             position={track.position}
             duration={track.duration}
-            grid={track.grid}
+            loop={track.loop}
             accent={deckId}
             onSeek={onSeekTrack}
           />
@@ -580,6 +608,53 @@ export function DeckColumn({
               )}
             </p>
           )}
+          {/* Hot cues (M21, ADR-0015): pads mean position. SHIFT+click
+              clears — the on-screen twin of the shift pad layer. */}
+          <div
+            className="deck__cue-pads"
+            role="group"
+            aria-label={t('deck.track.cues')}
+          >
+            {track.cues.map((cue, index) => (
+              <Button
+                key={index}
+                lit={cue !== null}
+                aria-label={t('deck.track.cue', { n: index + 1 })}
+                title={cue !== null ? formatTrackTime(cue) : undefined}
+                onClick={(event) =>
+                  event.shiftKey ? onClearHotCue(index) : onHotCuePad(index)
+                }
+              >
+                {index + 1}
+              </Button>
+            ))}
+          </div>
+          {/* Track loop (M21): IN arms a start, OUT closes the region
+              on the beat where the grid is confident, EXIT releases. */}
+          <div className="deck__track-row">
+            <Button lit={track.pendingLoopIn !== null} onClick={onLoopIn}>
+              {t('deck.track.loopIn')}
+            </Button>
+            <Button disabled={track.pendingLoopIn === null} onClick={onLoopOut}>
+              {t('deck.track.loopOut')}
+            </Button>
+            <Button
+              variant={track.loop ? 'primary' : 'default'}
+              disabled={!track.loop}
+              onClick={onLoopExit}
+            >
+              {t('deck.track.loopExit')}
+            </Button>
+            {track.loop &&
+              track.grid &&
+              wholeBeatLoop(track.loop, track.grid) !== null && (
+                <span className="deck__loop-length">
+                  {t('deck.track.loopBeats', {
+                    beats: wholeBeatLoop(track.loop, track.grid),
+                  })}
+                </span>
+              )}
+          </div>
         </Panel>
       ) : (
       <Panel className="deck__style">

@@ -16,9 +16,9 @@ type TrackOverviewProps = {
   /** Playhead position and track length, in seconds. */
   position: number
   duration: number
-  /** Beatgrid ticks (M20), drawn only while a grid is confident —
-   * downbeats heavier. Null draws no ticks. */
-  grid: { bpm: number; firstBeatSeconds: number } | null
+  /** The active loop region, shaded in the deck accent. Beat ticks and
+   * hot cues live on the BeatView's close-up now, not here (M22). */
+  loop?: { start: number; end: number } | null
   accent: 'a' | 'b'
   disabled?: boolean
   onSeek: (seconds: number) => void
@@ -32,7 +32,7 @@ export function TrackOverview({
   peaks,
   position,
   duration,
-  grid,
+  loop,
   accent,
   disabled,
   onSeek,
@@ -48,6 +48,16 @@ export function TrackOverview({
         .getPropertyValue(`--color-deck-${accent}`)
         .trim() || '#ffffff'
     context.clearRect(0, 0, WIDTH, HEIGHT)
+    // The loop region (M21) shades beneath the envelope so the
+    // waveform stays readable inside it.
+    if (loop && duration > 0) {
+      const left = (loop.start / duration) * WIDTH
+      const right = (loop.end / duration) * WIDTH
+      context.globalAlpha = 0.25
+      context.fillStyle = trace
+      context.fillRect(left, 0, Math.max(right - left, 2), HEIGHT)
+      context.globalAlpha = 1
+    }
     context.fillStyle = trace
     const buckets = Math.min(peaks.min.length, WIDTH)
     for (let x = 0; x < buckets; x++) {
@@ -59,29 +69,7 @@ export function TrackOverview({
       const half = Math.max(1, (amplitude * HEIGHT * 0.92) / 2)
       context.fillRect(x, HEIGHT / 2 - half, 1, half * 2)
     }
-    // Beatgrid ticks (M20): top edge, only while the grid is
-    // confident (null grid, no ticks; the honesty rule). Density-
-    // aware: a 2-minute track is ~270 beats across 480 px — drawing
-    // every beat fuses into a solid band (found on the device), so
-    // ticks step up to downbeats, then bars-of-4, until they fit.
-    if (grid && duration > 0) {
-      const tick =
-        getComputedStyle(canvas).getPropertyValue('--color-wave-beat').trim() ||
-        '#ff4757'
-      context.fillStyle = tick
-      const period = 60 / grid.bpm
-      const pxPerBeat = (period / duration) * WIDTH
-      const stride = pxPerBeat >= 6 ? 1 : pxPerBeat >= 1.5 ? 4 : 16
-      const first = grid.firstBeatSeconds % period
-      let beat = 0
-      for (let t = first; t < duration; t += period, beat++) {
-        if (beat % stride !== 0) continue
-        const x = Math.round((t / duration) * WIDTH)
-        const heavy = beat % (stride * 4) === 0
-        context.fillRect(x, 0, heavy ? 2 : 1, heavy ? 14 : 7)
-      }
-    }
-  }, [peaks, accent, grid, duration])
+  }, [peaks, accent, loop, duration])
 
   function seekFromPointer(event: React.PointerEvent<HTMLDivElement>) {
     if (disabled || duration <= 0) return

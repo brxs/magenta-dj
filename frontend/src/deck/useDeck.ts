@@ -20,7 +20,12 @@ import {
 import { createLoudnessTracker, trimDbFor } from '../audio/master'
 import { STYLE_SAMPLE_SECONDS } from '../audio/styleSample'
 import { useAudioEngine } from '../audio/engineContext'
-import { clampRate } from '../audio/track'
+import {
+  clampRate,
+  quantisedLoop,
+  snapToGrid,
+  type TrackLoop,
+} from '../audio/track'
 import { loadDeckSettings, updateDeckSettings } from '../persistence'
 import { SAMPLE_RATE, type DeckChannel, type DeckId } from '../audio/engine'
 import {
@@ -87,7 +92,18 @@ export type TrackState = {
   /** Varispeed rate (M20): 1 = as recorded; the readout shows
    * bpm × rate. */
   rate: number
+  /** Hot cues (M21, ADR-0015): one slot per pad, in track seconds.
+   * Session-only — they die with the load, like every captured
+   * artefact (ADR-0011 precedent). */
+  cues: (number | null)[]
+  /** The active loop region, mirrored from the engine; null = linear. */
+  loop: TrackLoop | null
+  /** A loop IN press awaiting its OUT (already snapped). */
+  pendingLoopIn: number | null
 }
+
+/** One hot-cue slot per pad in the bank. */
+export const HOT_CUE_COUNT = 8
 
 /** One deck's beat clock for the phase meter (M20): the context time
  * of some beat plus the period — two clocks compare by phase without
@@ -96,13 +112,17 @@ export type BeatClock = { periodSeconds: number; beatAtContext: number }
 
 /** One deck's feed for the zoom view (M22): hop-indexed band
  * energies, the playhead in hop units, the wall-time span of a hop
- * on this deck's display (track hops shrink under varispeed), and
- * the beat lattice when the deck's clock is confident. */
+ * on this deck's display (track hops shrink under varispeed), the
+ * beat lattice when the deck's clock is confident, the filled hot
+ * cues in hop units (M21) — empty for a live deck, which has none —
+ * and the active loop region in hop units (null when not looping). */
 export type ZoomSource = {
   bands: BandSource
   playheadHop: number
   realSecondsPerHop: number
   beat: { periodHops: number; anchorHop: number } | null
+  cues: number[]
+  loop: { startHop: number; endHop: number } | null
 }
 
 /** SYNC's verdict (M20): refusals name their reason so the UI never
@@ -180,6 +200,17 @@ export type DeckControls = {
    * and says why: no tempo on either side, or the required rate falls
    * outside the varispeed envelope. Needs no grid (ADR-0014). */
   syncTrack: (targetBpm: number | null) => SyncResult
+  /** Hot cues (M21, ADR-0015): an empty slot captures the playhead
+   * (snapped to the grid when confident), a filled one jumps to it —
+   * a jump is a plain seek, so it exits any loop. */
+  hotCuePad: (index: number) => void
+  clearHotCue: (index: number) => void
+  /** Track loop (M21): IN arms a start, OUT closes the region (both
+   * quantised while a grid is confident; a free loop owes a minimum
+   * length), EXIT releases it cleanly. */
+  loopIn: () => void
+  loopOut: () => void
+  loopExit: () => void
   /** The track's beat clock (playing + grid required), for the meter. */
   getTrackBeat: () => BeatClock | null
   /** The live stream's beat clock at the speakers (gated BPM, a
@@ -261,6 +292,10 @@ export function useDeck(deckId: DeckId): DeckControls {
     null,
   )
   const trackRateRef = useRef(1)
+  // Hot cues and the pending loop IN (M21): refs beside the state so
+  // bus-driven callbacks read fresh values without re-subscribing.
+  const trackCuesRef = useRef<(number | null)[]>([])
+  const pendingLoopInRef = useRef<number | null>(null)
   const statsRef = useRef<{
     playing: boolean
     playedFrames: number
@@ -527,14 +562,37 @@ export function useDeck(deckId: DeckId): DeckControls {
     dispatch({ type: 'play_requested' })
   }, [ensureChannel, engine, send, setPrimed, resetStreamMeasurements])
 
+  const seekTrack = useCallback((seconds: number) => {
+    if (modeRef.current !== 'playback') return
+    channelRef.current?.seekTrack(seconds)
+    // A seek exits the loop at the engine (ADR-0015); a pending IN
+    // dies with it — a region spanning a jump would be an accident.
+    pendingLoopInRef.current = null
+    const status = channelRef.current?.getTrackStatus()
+    if (!status) return
+    setTrack(
+      (current) =>
+        current && {
+          ...current,
+          position: status.position,
+          playing: status.playing,
+          ended: status.ended,
+          loop: status.loop,
+          pendingLoopIn: null,
+        },
+    )
+  }, [])
+
   /** Start generating off air: like play(), but muted on the master so
    * the prep is only audible over the cue tap (M10 transport CUE). */
   const prime = useCallback(async () => {
     // Transport CUE on a track deck: return to the top, parked — the
-    // deck-prep semantics, adapted (ADR-0013).
+    // deck-prep semantics, adapted (ADR-0013). Through the hook's
+    // seek so the loop exit and the pending IN reach the UI mirror
+    // (ADR-0015 — every seek path, no ghost regions).
     if (modeRef.current === 'playback') {
       channelRef.current?.pauseTrack()
-      channelRef.current?.seekTrack(0)
+      seekTrack(0)
       return
     }
     if (primedRef.current) return
@@ -554,7 +612,7 @@ export function useDeck(deckId: DeckId): DeckControls {
     setPrimed(true)
     send({ type: 'play' })
     dispatch({ type: 'play_requested' })
-  }, [ensureChannel, engine, send, setPrimed, resetStreamMeasurements])
+  }, [ensureChannel, engine, send, setPrimed, resetStreamMeasurements, seekTrack])
 
   const stop = useCallback(() => {
     // A playback deck's STOP pauses the track; running pads stop with
@@ -644,6 +702,8 @@ export function useDeck(deckId: DeckId): DeckControls {
       )
       trackMetaRef.current = { bpm: trackTempo, grid }
       trackRateRef.current = 1
+      trackCuesRef.current = Array<number | null>(HOT_CUE_COUNT).fill(null)
+      pendingLoopInRef.current = null
       channel.setBeatPeriod(trackTempo === null ? null : 60 / trackTempo)
       setMode('playback')
       if (wasPlaying) channel.playTrack()
@@ -657,6 +717,9 @@ export function useDeck(deckId: DeckId): DeckControls {
         bpm: trackTempo,
         grid,
         rate: 1,
+        cues: trackCuesRef.current,
+        loop: null,
+        pendingLoopIn: null,
       })
       return true
     },
@@ -672,6 +735,8 @@ export function useDeck(deckId: DeckId): DeckControls {
     trackMetaRef.current = null
     trackBandsRef.current = null
     trackRateRef.current = 1
+    trackCuesRef.current = []
+    pendingLoopInRef.current = null
     setMode('realtime')
     setTrack(null)
     // The stream's measurements start over either way.
@@ -683,22 +748,6 @@ export function useDeck(deckId: DeckId): DeckControls {
     (buckets: number) => channelRef.current?.getTrackPeaks(buckets) ?? null,
     [],
   )
-
-  const seekTrack = useCallback((seconds: number) => {
-    if (modeRef.current !== 'playback') return
-    channelRef.current?.seekTrack(seconds)
-    const status = channelRef.current?.getTrackStatus()
-    if (!status) return
-    setTrack(
-      (current) =>
-        current && {
-          ...current,
-          position: status.position,
-          playing: status.playing,
-          ended: status.ended,
-        },
-    )
-  }, [])
 
   const nudgeTrack = useCallback(
     (seconds: number) => {
@@ -724,6 +773,75 @@ export function useDeck(deckId: DeckId): DeckControls {
   const nudgeTrackPhase = useCallback((seconds: number) => {
     if (modeRef.current !== 'playback') return
     channelRef.current?.nudgeTrackPhase(seconds)
+  }, [])
+
+  const hotCuePad = useCallback(
+    (index: number) => {
+      if (modeRef.current !== 'playback') return
+      if (index < 0 || index >= HOT_CUE_COUNT) return
+      const existing = trackCuesRef.current[index] ?? null
+      if (existing !== null) {
+        // Filled pad: jump. The seek path carries the loop-exit rule.
+        seekTrack(existing)
+        return
+      }
+      const status = channelRef.current?.getTrackStatus()
+      if (!status) return
+      // Empty pad: capture the playhead, on the lattice when the grid
+      // is confident, free when not (the consumer rule).
+      const grid = trackMetaRef.current?.grid ?? null
+      const cue = Math.min(snapToGrid(status.position, grid), status.duration)
+      const next = [...trackCuesRef.current]
+      next[index] = cue
+      trackCuesRef.current = next
+      setTrack((current) => current && { ...current, cues: next })
+    },
+    [seekTrack],
+  )
+
+  const clearHotCue = useCallback((index: number) => {
+    if (modeRef.current !== 'playback') return
+    if (trackCuesRef.current[index] == null) return
+    const next = [...trackCuesRef.current]
+    next[index] = null
+    trackCuesRef.current = next
+    setTrack((current) => current && { ...current, cues: next })
+  }, [])
+
+  const loopIn = useCallback(() => {
+    if (modeRef.current !== 'playback') return
+    const status = channelRef.current?.getTrackStatus()
+    if (!status) return
+    const grid = trackMetaRef.current?.grid ?? null
+    const start = snapToGrid(status.position, grid)
+    pendingLoopInRef.current = start
+    setTrack((current) => current && { ...current, pendingLoopIn: start })
+  }, [])
+
+  const loopOut = useCallback(() => {
+    if (modeRef.current !== 'playback') return
+    const start = pendingLoopInRef.current
+    // OUT with no IN armed is a no-op, not a guess.
+    if (start === null) return
+    const status = channelRef.current?.getTrackStatus()
+    if (!status) return
+    const grid = trackMetaRef.current?.grid ?? null
+    const region = quantisedLoop(start, status.position, grid, status.duration)
+    if (!region) return
+    channelRef.current?.setTrackLoop(region.start, region.end)
+    pendingLoopInRef.current = null
+    // Mirror what the engine actually holds — its boundary may refuse.
+    const loop = channelRef.current?.getTrackStatus()?.loop ?? null
+    setTrack((current) => current && { ...current, loop, pendingLoopIn: null })
+  }, [])
+
+  const loopExit = useCallback(() => {
+    if (modeRef.current !== 'playback') return
+    channelRef.current?.clearTrackLoop()
+    pendingLoopInRef.current = null
+    setTrack(
+      (current) => current && { ...current, loop: null, pendingLoopIn: null },
+    )
   }, [])
 
   const syncTrack = useCallback(
@@ -772,6 +890,19 @@ export function useDeck(deckId: DeckId): DeckControls {
               anchorHop: grid.firstBeatSeconds / hopSeconds,
             }
           : null,
+        // Filled hot cues, track seconds → hops, in the same domain as
+        // the playhead so the strip lines them up exactly (M21).
+        cues: trackCuesRef.current
+          .filter((cue): cue is number => cue !== null)
+          .map((cue) => cue / hopSeconds),
+        // The active loop region, same seconds → hops conversion so the
+        // wash and its entry/exit edges land where the audio wraps (M21).
+        loop: status.loop
+          ? {
+              startHop: status.loop.start / hopSeconds,
+              endHop: status.loop.end / hopSeconds,
+            }
+          : null,
       }
     }
     const stats = statsRef.current
@@ -794,6 +925,10 @@ export function useDeck(deckId: DeckId): DeckControls {
             anchorHop: clock.anchorFrame / BAND_HOP_FRAMES,
           }
         : null,
+      // Hot cues and track loops are playback artefacts (ADR-0015); a
+      // live deck has neither.
+      cues: [],
+      loop: null,
     }
   }, [engine, bandScroller])
 
@@ -824,6 +959,10 @@ export function useDeck(deckId: DeckId): DeckControls {
             position: status.position,
             playing: status.playing,
             ended: status.ended,
+            // The loop mirrors generically: any engine-side exit
+            // (every seek path, ADR-0015) reaches the UI within a
+            // poll tick — no ghost regions.
+            loop: status.loop,
           },
       )
     }, 250)
@@ -1125,6 +1264,11 @@ export function useDeck(deckId: DeckId): DeckControls {
     setTrackRate,
     nudgeTrackPhase,
     syncTrack,
+    hotCuePad,
+    clearHotCue,
+    loopIn,
+    loopOut,
+    loopExit,
     getTrackBeat,
     getLiveBeat,
     getZoomSource,

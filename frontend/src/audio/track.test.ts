@@ -6,10 +6,15 @@ import {
   bendPlan,
   clampOffset,
   clampRate,
+  foldIntoLoop,
   MAX_BEND_FRACTION,
+  MIN_TRACK_LOOP_SECONDS,
   NUDGE_BEND_FRACTION,
   phaseOffsetBeats,
+  planLoopSet,
   positionAt,
+  quantisedLoop,
+  snapToGrid,
   tempoSliderToRate,
   trackPeaks,
   TRACK_RATE_RANGE,
@@ -106,6 +111,120 @@ describe('bend arithmetic', () => {
     expect(
       bendConsumed(plan.durationSeconds / 2, 1, plan.rate),
     ).toBeCloseTo(0.005)
+  })
+})
+
+describe('foldIntoLoop', () => {
+  const loop = { start: 8, end: 10 }
+
+  it('passes a playhead before the loop end through linearly', () => {
+    expect(foldIntoLoop(9.5, loop)).toBe(9.5)
+    // Before the region entirely: still linear — the audio only wraps
+    // once it reaches the end.
+    expect(foldIntoLoop(3, loop)).toBe(3)
+  })
+
+  it('wraps at the end exactly like the source does', () => {
+    expect(foldIntoLoop(10, loop)).toBe(8)
+    expect(foldIntoLoop(10.5, loop)).toBeCloseTo(8.5)
+    // Several laps in.
+    expect(foldIntoLoop(15.1, loop)).toBeCloseTo(9.1)
+  })
+
+  it('folds a playhead a quantised OUT left behind', () => {
+    // OUT snapped to 10 while the playhead was already at 10.3: the
+    // source wraps on its next check; the math agrees.
+    expect(foldIntoLoop(10.3, loop)).toBeCloseTo(8.3)
+  })
+})
+
+describe('snapToGrid', () => {
+  const grid = { bpm: 120, firstBeatSeconds: 0.25 }
+
+  it('snaps to the nearest beat in both directions', () => {
+    expect(snapToGrid(1.3, grid)).toBeCloseTo(1.25)
+    expect(snapToGrid(1.45, grid)).toBeCloseTo(1.25)
+    expect(snapToGrid(1.55, grid)).toBeCloseTo(1.75)
+  })
+
+  it('passes through free without a grid — the consumer rule', () => {
+    expect(snapToGrid(1.3, null)).toBe(1.3)
+  })
+
+  it('never snaps before the top of the track', () => {
+    expect(snapToGrid(0, { bpm: 120, firstBeatSeconds: 0.4 })).toBeCloseTo(0.4)
+  })
+})
+
+describe('quantisedLoop', () => {
+  const grid = { bpm: 120, firstBeatSeconds: 0 }
+
+  it('snaps both ends onto the lattice', () => {
+    expect(quantisedLoop(8.1, 10.2, grid, 60)).toEqual({ start: 8, end: 10 })
+  })
+
+  it('an OUT on the IN beat owes one beat — a loop must loop', () => {
+    expect(quantisedLoop(8.1, 8.2, grid, 60)).toEqual({ start: 8, end: 8.5 })
+  })
+
+  it('runs free without a grid, refusing a backwards region', () => {
+    expect(quantisedLoop(8.1, 10.2, null, 60)).toEqual({ start: 8.1, end: 10.2 })
+    expect(quantisedLoop(10.2, 8.1, null, 60)).toBeNull()
+  })
+
+  it('refuses a free loop shorter than the honest minimum', () => {
+    expect(quantisedLoop(8, 8.01, null, 60)).toBeNull()
+    expect(quantisedLoop(8, 8 + MIN_TRACK_LOOP_SECONDS, null, 60)).toEqual({
+      start: 8,
+      end: 8 + MIN_TRACK_LOOP_SECONDS,
+    })
+  })
+
+  it('clamps the end into the track and refuses a degenerate tail', () => {
+    expect(quantisedLoop(58.9, 59.9, grid, 59.1)).toEqual({
+      start: 59,
+      end: 59.1,
+    })
+    expect(quantisedLoop(59.1, 59.2, null, 59.1)).toBeNull()
+  })
+})
+
+describe('planLoopSet', () => {
+  it('refuses what cannot honestly loop', () => {
+    expect(planLoopSet('playing', 5, Number.NaN, 10, 60)).toEqual({
+      action: 'refuse',
+    })
+    expect(planLoopSet('playing', 5, -1, 10, 60)).toEqual({ action: 'refuse' })
+    expect(planLoopSet('playing', 5, 8, 61, 60)).toEqual({ action: 'refuse' })
+    expect(planLoopSet('playing', 5, 8, 8.01, 60)).toEqual({ action: 'refuse' })
+  })
+
+  it('refuses on a deck parked at its end — nothing is rolling', () => {
+    expect(planLoopSet('ended', 60, 8, 10, 60)).toEqual({ action: 'refuse' })
+  })
+
+  it('restarts inside the region when a late OUT lands behind the playhead', () => {
+    const plan = planLoopSet('playing', 10.3, 8, 10, 60)
+    expect(plan.action).toBe('restart')
+    expect((plan as { offset: number }).offset).toBeCloseTo(8.3)
+  })
+
+  it('re-anchors a playing transport on the audible position', () => {
+    expect(planLoopSet('playing', 9, 8, 10, 60)).toEqual({
+      action: 'reanchor',
+      offset: 9,
+    })
+  })
+
+  it('parks a paused playhead past the region inside it', () => {
+    expect(planLoopSet('paused', 30, 8, 10, 60)).toEqual({
+      action: 'park',
+      offset: 8,
+    })
+  })
+
+  it('just applies for a paused playhead at or before the region', () => {
+    expect(planLoopSet('paused', 5, 8, 10, 60)).toEqual({ action: 'apply' })
   })
 })
 

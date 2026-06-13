@@ -32,6 +32,9 @@
   --color-wave-mid: #e0a33c;
   --color-wave-high: #e8edf2;
   --color-wave-beat: #ff4757;
+  /* Hot-cue marker (M21): a mint that reads over the band colours and
+     stays clear of the red beat marks and the per-deck accent playhead. */
+  --color-cue: #26de81;
 
   /* LED states */
   --color-led-ok: #2ecc71;
