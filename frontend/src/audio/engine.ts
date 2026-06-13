@@ -43,9 +43,12 @@ import {
   bendPlan,
   clampOffset,
   clampRate,
+  foldIntoLoop,
   MAX_PENDING_SLIP_SECONDS,
+  MIN_TRACK_LOOP_SECONDS,
   positionAt,
   trackPeaks,
+  type TrackLoop,
   type TrackTransport,
 } from './track'
 import { encodeWav, floatToInt16 } from './wav'
@@ -113,17 +116,25 @@ export type DeckChannel = {
   playTrack: () => boolean
   /** Park the playhead where it is. */
   pauseTrack: () => void
-  /** Jump the playhead; whether it was playing is preserved. */
+  /** Jump the playhead; whether it was playing is preserved. Exits
+   * an active loop (ADR-0015). */
   seekTrack: (seconds: number) => void
+  /** Loop region on the source's native loop (M21, ADR-0015):
+   * survives pause and rate changes; any seek exits it. Quantise is
+   * the caller's job; the boundary refuses regions that can't loop. */
+  setTrackLoop: (start: number, end: number) => void
+  clearTrackLoop: () => void
   /** Playhead snapshot, or null with no track loaded. The end is an
    * explicit state: silence with the position parked (ADR-0013).
-   * `rate` is the base varispeed rate (M20), bends excluded. */
+   * `rate` is the base varispeed rate (M20), bends excluded; the
+   * position folds through an active loop (M21). */
   getTrackStatus: () => {
     position: number
     duration: number
     playing: boolean
     ended: boolean
     rate: number
+    loop: TrackLoop | null
     /** Context time of this snapshot — lets callers convert the
      * track-domain playhead into the shared audio clock (M20). */
     contextTime: number
@@ -533,6 +544,11 @@ export function createAudioEngine(): AudioEngine {
       // transport re-anchors on every rate change, so positionAt
       // stays exact even mid-bend.
       let trackRate = 1
+      // Track loop (M21, ADR-0015): the source's native loop region,
+      // owned alongside the rate. Transport math stays linear; every
+      // position read folds through it — the same wrap arithmetic the
+      // rendering loop uses, so playhead and seam never disagree.
+      let trackLoop: TrackLoop | null = null
       let pendingSlip = 0
       // Below this the slip is done: half a millisecond is under any
       // audible phase resolution and ends the bend recursion.
@@ -540,12 +556,23 @@ export function createAudioEngine(): AudioEngine {
       let bentRate: number | null = null
       let bendStartedAt = 0
       let bendTimer: ReturnType<typeof setTimeout> | null = null
+      function trackPositionNow(): number {
+        if (!trackBuffer) return 0
+        const raw = positionAt(
+          trackTransport,
+          bus.context.currentTime,
+          trackBuffer.duration,
+        )
+        return trackLoop ? foldIntoLoop(raw, trackLoop) : raw
+      }
       function setSourceRate(rate: number) {
         const now = bus.context.currentTime
         if (trackTransport.state === 'playing' && trackBuffer) {
+          // Re-anchor on the FOLDED position: a rate change mid-loop
+          // must not let the linear anchor outrun the audible seam.
           trackTransport = {
             state: 'playing',
-            offset: positionAt(trackTransport, now, trackBuffer.duration),
+            offset: trackPositionNow(),
             startedAt: now,
             rate,
           }
@@ -606,8 +633,14 @@ export function createAudioEngine(): AudioEngine {
         if (!buffer) return
         const source = bus.context.createBufferSource()
         source.buffer = buffer
-        // Rate carries over across pause/seek/source restarts.
+        // Rate and loop carry over across pause/resume restarts (a
+        // seek clears the loop before reaching here, ADR-0015).
         source.playbackRate.value = trackRate
+        if (trackLoop) {
+          source.loop = true
+          source.loopStart = trackLoop.start
+          source.loopEnd = trackLoop.end
+        }
         source.connect(liveGain)
         source.onended = () => {
           source.disconnect()
@@ -823,6 +856,7 @@ export function createAudioEngine(): AudioEngine {
           stopTrackSource()
           trackBuffer = decoded
           trackTransport = { state: 'paused', offset: 0 }
+          trackLoop = null
           return {
             duration: decoded.duration,
             sampleRate: decoded.sampleRate,
@@ -840,16 +874,16 @@ export function createAudioEngine(): AudioEngine {
         },
         pauseTrack() {
           if (!trackBuffer || trackTransport.state !== 'playing') return
-          const offset = positionAt(
-            trackTransport,
-            bus.context.currentTime,
-            trackBuffer.duration,
-          )
+          // The folded position: pausing mid-loop parks inside it.
+          const offset = trackPositionNow()
           stopTrackSource()
           trackTransport = { state: 'paused', offset }
         },
         seekTrack(seconds) {
           if (!trackBuffer) return
+          // Any seek exits the loop (ADR-0015): one rule, no dormant
+          // regions waiting to wrap a surprised playhead.
+          trackLoop = null
           const offset = clampOffset(seconds, trackBuffer.duration)
           if (trackTransport.state === 'playing') {
             stopTrackSource()
@@ -858,20 +892,79 @@ export function createAudioEngine(): AudioEngine {
             trackTransport = { state: 'paused', offset }
           }
         },
+        setTrackLoop(start, end) {
+          if (!trackBuffer) return
+          if (!Number.isFinite(start) || !Number.isFinite(end)) return
+          // Callers quantise upstream; the boundary still refuses a
+          // region that cannot honestly loop.
+          if (
+            start < 0 ||
+            end > trackBuffer.duration ||
+            end - start < MIN_TRACK_LOOP_SECONDS
+          ) {
+            return
+          }
+          // The audible playhead, folded through the OLD loop if one
+          // was active — the anchor for everything below.
+          const position = trackPositionNow()
+          trackLoop = { start, end }
+          if (trackTransport.state === 'playing') {
+            // A playhead at/past the new end (a late OUT snapping
+            // backwards): restart inside the region rather than
+            // trusting the wrap-on-reach edge (ADR-0015).
+            if (position >= end) {
+              stopTrackSource()
+              startTrackSource(foldIntoLoop(position, trackLoop))
+              return
+            }
+            // Re-anchor so the linear raw history can't fight the
+            // new fold (the rate-change precedent, ADR-0014).
+            trackTransport = {
+              state: 'playing',
+              offset: position,
+              startedAt: bus.context.currentTime,
+              rate: trackTransport.rate,
+            }
+          } else if (trackTransport.state === 'paused' && position >= end) {
+            // A parked playhead past the region folds in now, so a
+            // later resume starts deterministically inside it.
+            trackTransport = {
+              state: 'paused',
+              offset: foldIntoLoop(position, trackLoop),
+            }
+          }
+          if (trackSource) {
+            trackSource.loop = true
+            trackSource.loopStart = start
+            trackSource.loopEnd = end
+          }
+        },
+        clearTrackLoop() {
+          if (!trackLoop) return
+          // Re-anchor on the folded position first: from here the
+          // playhead runs linear, and it must run from the seam.
+          if (trackTransport.state === 'playing' && trackBuffer) {
+            trackTransport = {
+              state: 'playing',
+              offset: trackPositionNow(),
+              startedAt: bus.context.currentTime,
+              rate: trackTransport.rate,
+            }
+          }
+          trackLoop = null
+          if (trackSource) trackSource.loop = false
+        },
         getTrackStatus() {
           if (!trackBuffer) return null
           return {
-            position: positionAt(
-              trackTransport,
-              bus.context.currentTime,
-              trackBuffer.duration,
-            ),
+            position: trackPositionNow(),
             duration: trackBuffer.duration,
             playing: trackTransport.state === 'playing',
             ended: trackTransport.state === 'ended',
             // The base rate the tempo control set — a transient nudge
             // bend deliberately doesn't show here.
             rate: trackRate,
+            loop: trackLoop,
             contextTime: bus.context.currentTime,
           }
         },
@@ -906,6 +999,7 @@ export function createAudioEngine(): AudioEngine {
           trackBuffer = null
           trackTransport = { state: 'paused', offset: 0 }
           trackRate = 1
+          trackLoop = null
         },
         getLevel() {
           return rmsLevel(analyser, analyserBuffer)

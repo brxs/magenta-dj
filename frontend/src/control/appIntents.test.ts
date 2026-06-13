@@ -40,6 +40,11 @@ function fakeDeck(state: Partial<DeckState> = {}): DeckControls {
     setTrackRate: vi.fn(),
     nudgeTrackPhase: vi.fn(),
     syncTrack: vi.fn(() => 'synced' as const),
+    hotCuePad: vi.fn(),
+    clearHotCue: vi.fn(),
+    loopIn: vi.fn(),
+    loopOut: vi.fn(),
+    loopExit: vi.fn(),
     getTrackBeat: vi.fn(() => null),
     getLiveBeat: vi.fn(() => null),
     getZoomSource: vi.fn(() => null),
@@ -243,6 +248,9 @@ describe('applyAppIntent', () => {
         bpm: null,
         grid: null,
         rate: 1,
+        cues: Array<number | null>(8).fill(null),
+        loop: null,
+        pendingLoopIn: null,
       },
     }
   }

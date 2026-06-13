@@ -87,6 +87,65 @@ export function clampOffset(seconds: number, duration: number): number {
   return Math.min(seconds, duration)
 }
 
+/** An active loop region in track seconds (M21, ADR-0015). */
+export type TrackLoop = { start: number; end: number }
+
+/** The shortest honest loop: sub-quantum regions are where Web Audio
+ * implementations differ, and a near-zero loop is a buzz, not a loop.
+ * Only bites without a grid — a gridded loop owes a whole beat. */
+export const MIN_TRACK_LOOP_SECONDS = 0.05
+
+/** Fold a linearly-derived playhead into an active loop: linear until
+ * the region's end, then wrapping — the same path the audio takes
+ * through the source's native loop, so every position consumer stays
+ * truthful inside it. A playhead already past the end (a quantised
+ * OUT can land just behind the press) wraps exactly like the source
+ * does on its next position check. */
+export function foldIntoLoop(seconds: number, loop: TrackLoop): number {
+  if (seconds < loop.end) return seconds
+  return loop.start + ((seconds - loop.end) % (loop.end - loop.start))
+}
+
+/** Nearest grid beat (M21 quantise): cues and loop points snap onto
+ * the lattice while a grid is confident. No grid, no snap — the
+ * position passes through free (the M14 consumer rule). */
+export function snapToGrid(
+  seconds: number,
+  grid: { bpm: number; firstBeatSeconds: number } | null,
+): number {
+  if (!grid) return seconds
+  const period = 60 / grid.bpm
+  // Beats before the first don't exist on the lattice — the top of
+  // the track snaps forward to beat one, never to a phantom.
+  const k = Math.max(
+    0,
+    Math.round((seconds - grid.firstBeatSeconds) / period),
+  )
+  return grid.firstBeatSeconds + k * period
+}
+
+/** Build the loop region from IN and OUT presses: both ends snapped
+ * while a grid is confident, the end then owing at least one beat
+ * (an OUT on the IN's beat means the next one — a loop must loop).
+ * Without a grid the region is free but must still run forward.
+ * Returns null when no honest region exists. */
+export function quantisedLoop(
+  inSeconds: number,
+  outSeconds: number,
+  grid: { bpm: number; firstBeatSeconds: number } | null,
+  duration: number,
+): TrackLoop | null {
+  const start = snapToGrid(clampOffset(inSeconds, duration), grid)
+  let end = snapToGrid(clampOffset(outSeconds, duration), grid)
+  if (grid) {
+    const period = 60 / grid.bpm
+    if (end < start + period) end = start + period
+  }
+  if (end > duration) end = duration
+  if (!(end - start >= MIN_TRACK_LOOP_SECONDS)) return null
+  return { start, end }
+}
+
 /** Min/max envelope per bucket across both channels — the static
  * overview a decoded track can afford that the live stream cannot.
  * Buckets cover the buffer evenly; a short final bucket still counts. */
